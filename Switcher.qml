@@ -286,7 +286,7 @@ Item {
             anchors.right: parent.right
             anchors.rightMargin: Style.space(8)
             anchors.verticalCenter: parent.verticalCenter
-            text: root.filterText || "Windows…"
+            text: root.filterText || "Type to search"
             color: root.foreground
             opacity: root.filterText ? 1 : 0.58
             font.family: root.fontFamily

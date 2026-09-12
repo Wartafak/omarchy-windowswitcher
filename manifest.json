@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "wartafak.taskswitcher",
+  "name": "TasksWitcher",
+  "version": "1.0.0",
+  "author": "Wartafak",
+  "license": "MIT",
+  "description": "Show and navigate currently open windows. Persistent top-bar icon strip plus Super+Tab switcher. Witcher-inspired task switcher.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "TasksWitcher",
+    "description": "Open-window icons in the top bar + Super+Tab switcher",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "left"
+  }
+}

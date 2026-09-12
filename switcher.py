@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""List all open windows across workspaces and focus the picked one.
+
+Uses hyprctl + omarchy-menu-select (Quickshell). Safe: out-of-process,
+no compositor plugin, survives Hyprland updates.
+"""
+import json
+import os
+import subprocess
+import sys
+
+
+def get_clients():
+    out = subprocess.run(
+        ["hyprctl", "clients", "-j"], capture_output=True, text=True, check=True
+    ).stdout
+    return json.loads(out)
+
+
+def desktop_entries():
+    """Index .desktop files: basename and StartupWMClass -> Icon value."""
+    by_wmclass = {}
+    by_id = {}
+    dirs = (
+        os.path.expanduser("~/.local/share/applications"),
+        "/usr/share/applications",
+    )
+    for d in dirs:
+        try:
+            files = os.listdir(d)
+        except OSError:
+            continue
+        for f in files:
+            if not f.endswith(".desktop"):
+                continue
+            base = f[: -len(".desktop")].lower()
+            icon = None
+            wmclass = None
+            try:
+                with open(os.path.join(d, f), encoding="utf-8", errors="replace") as fh:
+                    for line in fh:
+                        if line.startswith("Icon=") and icon is None:
+                            icon = line[5:].strip()
+                        elif line.startswith("StartupWMClass=") and wmclass is None:
+                            wmclass = line[15:].strip().lower()
+                        if icon is not None and wmclass is not None:
+                            break
+            except OSError:
+                continue
+            if not icon:
+                continue
+            by_id.setdefault(base, icon)
+            if wmclass:
+                by_wmclass.setdefault(wmclass, icon)
+    return by_wmclass, by_id
+
+
+def icon_for(cls, by_wmclass, by_id):
+    """Original app icon (Icon= value) for a Hyprland window class, or ''."""
+    c = (cls or "").lower()
+    if not c:
+        return ""
+    if c in by_wmclass:
+        return by_wmclass[c]
+    if c in by_id:
+        return by_id[c]
+    for base, icon in by_id.items():
+        if c.startswith(base) or base.startswith(c):
+            return icon
+    return ""
+
+
+def glyph_for(cls):
+    """Fallback Nerd Font glyph for windows with no .desktop icon."""
+    c = (cls or "").lower()
+    for keys, glyph in (
+        (("brave", "chromium", "chrome", "firefox", "zen", "edge", "browser"), ""),
+        (("foot", "kitty", "alacritty", "ghostty", "wezterm", "terminal"), ""),
+        (("org.omarchy.agent", "agent"), "󰚩"),
+        (("nautilus", "nemo", "dolphin", "thunar", "files"), ""),
+        (("code", "cursor", "zed", "nvim", "neovim", "sublime", "helix"), ""),
+        (("spotify", "music"), ""),
+        (("signal", "discord", "telegram", "whatsapp"), ""),
+        (("thunderbird", "mail"), ""),
+        (("steam", "heroic", "lutris", "bottles", "game"), ""),
+        (("vlc", "mpv", "video"), ""),
+        (("loupe", "eog", "image", "photo"), ""),
+        (("obsidian", "notes"), "󰎞"),
+        (("calc",), ""),
+        (("setting",), ""),
+    ):
+        if any(k in c for k in keys):
+            return glyph
+    return ""
+
+
+def main():
+    try:
+        clients = get_clients()
+    except Exception as e:
+        print(f"hyprctl failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Only mapped (real) windows; sort by workspace then recent focus
+    clients = [c for c in clients if c.get("mapped")]
+    clients.sort(
+        key=lambda c: (
+            c.get("workspace", {}).get("id", 99),
+            -(c.get("focusHistoryID", 0)),
+        )
+    )
+
+    if not clients:
+        subprocess.run(["omarchy-notification-send", "No open windows"])
+        return
+
+    options = []
+    by_wmclass, by_id = desktop_entries()
+    for c in clients:
+        ws = c.get("workspace", {}).get("name", "?")
+        cls = (c.get("class") or "?")[:24].replace("\t", " ")
+        title = (
+            (c.get("title") or "").strip().replace("\n", " ").replace("\t", " ")
+        )
+        title = title[:40] + "…" if len(title) > 40 else title
+        title = title or cls
+        addr = c["address"]
+        float_mark = "＋" if c.get("floating") else ""
+        label = f"[ws {ws}]{float_mark} {cls} — {title}"
+        # Menu row format is "<glyph><TAB><label><TAB><subtext>[<TAB><icon>]":
+        # the glyph shows as icon (or the real app icon when supplied),
+        # subtext renders under the label, and selection returns
+        # "label<TAB>subtext" so the address is a stable key.
+        icon = icon_for(c.get("class"), by_wmclass, by_id).replace("\t", " ")
+        options.append(f"{glyph_for(cls)}\t{label}\t{addr}\t{icon}")
+
+    try:
+        sel = subprocess.run(
+            ["omarchy-menu-select", "Windows", *options, "--", "--width", "550"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except subprocess.CalledProcessError:
+        sys.exit(1)  # user cancelled
+
+    # selection is "label<TAB>address"
+    addr = sel.split("\t")[-1].strip()
+    if not addr or not addr.startswith("0x"):
+        print(f"could not parse selection: {sel!r}", file=sys.stderr)
+        sys.exit(1)
+
+    # Hyprland 0.56+ Lua dispatch (focuswindow switches workspace too)
+    lua = f'hl.dsp.focus({{ window = "address:{addr}" }})'
+    r = subprocess.run(["hyprctl", "dispatch", lua])
+    if r.returncode != 0:
+        subprocess.run(["hyprctl", "dispatch", "focuswindow", f"address:{addr}"])
+
+
+if __name__ == "__main__":
+    main()

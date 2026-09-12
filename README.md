@@ -34,8 +34,11 @@ omarchy bar put wartafak.taskswitcher --section left --after omarchy.workspaces
 Super+Tab binding (`~/.config/hypr/bindings.lua`):
 
 ```lua
-o.bind("SUPER + TAB", "All windows", "omarchy-shell shell toggle wartafak.taskswitcher")
+o.bind("SUPER + TAB", "All windows", "omarchy-shell shell summon wartafak.taskswitcher '{\"action\": \"cycle\"}'")
+o.bind("SUPER + SHIFT + TAB", "Previous window", "omarchy-shell shell summon wartafak.taskswitcher '{\"action\": \"cycleBack\"}'")
 ```
+
+Repeats cycle while open (macOS-style); `Esc` closes, `Enter`/click focuses.
 
 ## Files
 

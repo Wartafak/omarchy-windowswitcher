@@ -24,6 +24,8 @@ Item {
   // Stable creation-order registry (same approach as BarWidget).
   property var knownWindows: []
   property var rows: []
+  // Resolved hyprctl addresses parallel to rows (matched by key).
+  property var rowAddrs: []
 
   property color background: Color.menu.background
   property color foreground: Color.menu.text
@@ -52,10 +54,10 @@ Item {
       return
     }
     if (root.opened && (action === "cycle" || action === "cycleBack")) {
+      // Highlight only — focusing while the overlay holds exclusivity
+      // does not stick, so selection is applied on close (release/Enter).
       root.select(action === "cycleBack" ? -1 : 1)
-      // Live-select: focusing follows the highlight while cycling, so the
-      // window is already focused when Super is released (which just closes).
-      root.focusSelected()
+      root.confirmOnSuperRelease = true
       Qt.callLater(function() { keyCatcher.forceActiveFocus() })
       return
     }
@@ -65,10 +67,13 @@ Item {
     root.cursorActive = true
     // First Super+Tab only opens; repeats cycle with live focus, so a
     // Super release afterwards just dismisses (focus already moved).
+    // confirmOnSuperRelease is set only by a cycle while open, so the
+    // release that follows the opening press keeps the overlay open.
     // Cleared on close.
-    root.confirmOnSuperRelease = (action === "cycle" || action === "cycleBack")
     root.rebuildDisplay()
     root.opened = true
+    // Resolve addresses for focus; rows are ready now.
+    clientsProc.running = true
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -202,39 +207,84 @@ Item {
     var t = root.rows[index]
     root.opened = false
     root.filterText = ""
-    root.focusToplevel(t)
+    root.focusToplevel(t, index)
   }
 
-  // Focus without closing: used while cycling so selection is live.
-  // Primary path is in-process; hyprctl eval is a fallback in case the
-  // compositor ignores activation while the overlay holds exclusivity.
-  function focusToplevel(t) {
+  // Focus a row: close first (the overlay's exclusivity blocks focusing
+  // while open), then activate in-process plus hyprctl by resolved address.
+  // t.activate() is honored for real input (clicks); QML toplevels expose
+  // no address, so addresses resolve via hyprctl (matched by class/title).
+  function focusToplevel(t, index) {
     if (!t) return
     if (typeof t.activate === "function") t.activate()
-    var addr = ""
-    try { addr = String(t.address || "") } catch (e) { addr = "" }
-    if (addr) {
+    var addr = (index !== undefined && index !== null
+      && index < root.rowAddrs.length) ? String(root.rowAddrs[index] || "") : ""
+    if (addr && addr.indexOf("0x") === 0) {
       Quickshell.execDetached(["hyprctl", "eval",
         'hl.dispatch(hl.dsp.focus({window = "address:' + addr + '"}))'])
     }
-  }
-
-  function focusSelected() {
-    if (root.selectedIndex < 0 || root.selectedIndex >= root.rows.length) return
-    root.focusToplevel(root.rows[root.selectedIndex])
   }
 
   Connections {
     target: ToplevelManager.toplevels
     function onValuesChanged() {
       root.syncWindows()
-      if (root.opened) root.rebuildDisplay()
+      if (root.opened) {
+        root.rebuildDisplay()
+        clientsProc.running = true
+      }
     }
   }
 
   Component.onCompleted: root.syncWindows()
 
   ListModel { id: displayModel }
+
+  // hyprctl is the only source of window addresses; match clients to rows
+  // by class/title (workspace only as tiebreak — QML workspace names may
+  // be empty). First unmatched wins for duplicates.
+  Process {
+    id: clientsProc
+    command: ["hyprctl", "clients", "-j"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try {
+          var clients = JSON.parse(text)
+          var used = {}
+          var addrs = []
+          for (var i = 0; i < root.rows.length; i++) {
+            var t = root.rows[i]
+            var cls = "", ttl = ""
+            try {
+              cls = String((t && t.appId) || "").trim()
+              ttl = String((t && t.title) || "")
+            } catch (e) { }
+            var found = ""
+            // Pass 1: exact class+title+workspace; pass 2: class+title.
+            for (var pass = 0; pass < 2 && !found; pass++) {
+              for (var j = 0; j < clients.length; j++) {
+                if (used[j]) continue
+                var c = clients[j]
+                var cc = String(c["class"] || "").trim()
+                var ct = String(c.title || "")
+                if (cc !== cls || ct !== ttl) continue
+                if (pass === 0) {
+                  var cws = ""
+                  try { cws = String((c.workspace && c.workspace.name) || "") } catch (e) { cws = "" }
+                  if (cws !== root.wsName(t)) continue
+                }
+                found = String(c.address || "")
+                used[j] = true
+                break
+              }
+            }
+            addrs.push(found)
+          }
+          root.rowAddrs = addrs
+        } catch (e) { }
+      }
+    }
+  }
 
   PointerMoveGate {
     id: pointerGate
@@ -308,13 +358,13 @@ Item {
         }
 
         Keys.onReleased: function(event) {
-          if (!root.opened || !root.confirmOnSuperRelease) return
+          if (!root.opened) return
           if (event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R
               || event.key === Qt.Key_Meta) {
-            // Focus already follows the highlight while cycling; release
-            // just dismisses the overlay.
             event.accepted = true
-            root.close()
+            // Plain open + release keeps the overlay open; release after
+            // cycling applies the highlight. Esc/scrim dismisses.
+            if (root.confirmOnSuperRelease) root.activateIndex(root.selectedIndex)
           }
         }
       }

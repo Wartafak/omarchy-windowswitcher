@@ -23,7 +23,10 @@ def desktop_entries():
     by_id = {}
     dirs = (
         os.path.expanduser("~/.local/share/applications"),
+        "/usr/local/share/applications",
         "/usr/share/applications",
+        "/var/lib/flatpak/exports/share/applications",
+        os.path.expanduser("~/.local/share/flatpak/exports/share/applications"),
     )
     for d in dirs:
         try:
@@ -56,7 +59,11 @@ def desktop_entries():
 
 
 def icon_for(cls, by_wmclass, by_id):
-    """Original app icon (Icon= value) for a Hyprland window class, or ''."""
+    """Original app icon (Icon= value) for a Hyprland window class.
+
+    Falls back to the class name itself so the icon theme can resolve it
+    even without a matching .desktop file. Returns '' only when unknown.
+    """
     c = (cls or "").lower()
     if not c:
         return ""
@@ -67,7 +74,14 @@ def icon_for(cls, by_wmclass, by_id):
     for base, icon in by_id.items():
         if c.startswith(base) or base.startswith(c):
             return icon
-    return ""
+    # Strip common suffixes/prefixes (e.g. brave-origin -> brave) and retry.
+    for sep in (".", "-", "_"):
+        if sep in c:
+            short = c.split(sep)[0]
+            if short in by_id:
+                return by_id[short]
+    # Last resort: let the icon theme try the class name directly.
+    return cls.strip()
 
 
 def glyph_for(cls):
@@ -78,8 +92,8 @@ def glyph_for(cls):
         (("foot", "kitty", "alacritty", "ghostty", "wezterm", "terminal"), ""),
         (("org.omarchy.agent", "agent"), "󰚩"),
         (("nautilus", "nemo", "dolphin", "thunar", "files"), ""),
-        (("code", "cursor", "zed", "nvim", "neovim", "sublime", "helix"), ""),
-        (("spotify", "music"), ""),
+        (("code", "cursor", "zed", "nvim", "neovim", "sublime", "helix"), ""),
+        (("spotify", "music"), ""),
         (("signal", "discord", "telegram", "whatsapp"), ""),
         (("thunderbird", "mail"), ""),
         (("steam", "heroic", "lutris", "bottles", "game"), ""),
@@ -150,11 +164,14 @@ def main():
         print(f"could not parse selection: {sel!r}", file=sys.stderr)
         sys.exit(1)
 
-    # Hyprland 0.56+ Lua dispatch (focuswindow switches workspace too)
-    lua = f'hl.dsp.focus({{ window = "address:{addr}" }})'
-    r = subprocess.run(["hyprctl", "dispatch", lua])
+    # Hyprland 0.56+: `hyprctl dispatch X Y` builds invalid Lua
+    # (`hl.dispatch(X Y)`), so execute via eval with a dispatcher object.
+    # This focuses the window and switches to its workspace.
+    lua = f'hl.dispatch(hl.dsp.focus({{window = "address:{addr}"}}))'
+    r = subprocess.run(["hyprctl", "eval", lua])
     if r.returncode != 0:
-        subprocess.run(["hyprctl", "dispatch", "focuswindow", f"address:{addr}"])
+        print(f"focus failed for {addr}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

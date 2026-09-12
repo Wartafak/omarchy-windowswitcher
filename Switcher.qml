@@ -53,6 +53,9 @@ Item {
     }
     if (root.opened && (action === "cycle" || action === "cycleBack")) {
       root.select(action === "cycleBack" ? -1 : 1)
+      // Live-select: focusing follows the highlight while cycling, so the
+      // window is already focused when Super is released (which just closes).
+      root.focusSelected()
       Qt.callLater(function() { keyCatcher.forceActiveFocus() })
       return
     }
@@ -60,9 +63,9 @@ Item {
     root.filterText = ""
     root.selectedIndex = 0
     root.cursorActive = true
-    // Releasing Super after a Super+Tab open confirms (macOS-style).
-    // Cleared on close; typing/clicking keeps it — Super+letter is a
-    // compositor bind, so a Super release while open means "done".
+    // First Super+Tab only opens; repeats cycle with live focus, so a
+    // Super release afterwards just dismisses (focus already moved).
+    // Cleared on close.
     root.confirmOnSuperRelease = (action === "cycle" || action === "cycleBack")
     root.rebuildDisplay()
     root.opened = true
@@ -199,7 +202,26 @@ Item {
     var t = root.rows[index]
     root.opened = false
     root.filterText = ""
-    if (t && typeof t.activate === "function") t.activate()
+    root.focusToplevel(t)
+  }
+
+  // Focus without closing: used while cycling so selection is live.
+  // Primary path is in-process; hyprctl eval is a fallback in case the
+  // compositor ignores activation while the overlay holds exclusivity.
+  function focusToplevel(t) {
+    if (!t) return
+    if (typeof t.activate === "function") t.activate()
+    var addr = ""
+    try { addr = String(t.address || "") } catch (e) { addr = "" }
+    if (addr) {
+      Quickshell.execDetached(["hyprctl", "eval",
+        'hl.dispatch(hl.dsp.focus({window = "address:' + addr + '"}))'])
+    }
+  }
+
+  function focusSelected() {
+    if (root.selectedIndex < 0 || root.selectedIndex >= root.rows.length) return
+    root.focusToplevel(root.rows[root.selectedIndex])
   }
 
   Connections {
@@ -289,8 +311,10 @@ Item {
           if (!root.opened || !root.confirmOnSuperRelease) return
           if (event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R
               || event.key === Qt.Key_Meta) {
+            // Focus already follows the highlight while cycling; release
+            // just dismisses the overlay.
             event.accepted = true
-            root.activateIndex(root.selectedIndex)
+            root.close()
           }
         }
       }

@@ -141,12 +141,13 @@ def main():
         addr = c["address"]
         float_mark = "＋" if c.get("floating") else ""
         label = f"[ws {ws}]{float_mark} {cls} — {title}"
-        # Menu row format is "<glyph><TAB><label><TAB><subtext>[<TAB><icon>]":
-        # the glyph shows as icon (or the real app icon when supplied),
-        # subtext renders under the label, and selection returns
-        # "label<TAB>subtext" so the address is a stable key.
-        icon = icon_for(c.get("class"), by_wmclass, by_id).replace("\t", " ")
-        options.append(f"{glyph_for(cls)}\t{label}\t{addr}\t{icon}")
+        # Stock omarchy.menu only supports 3 fields for picker rows:
+        # "<glyph><TAB><label><TAB><subtext>" (its parser joins any extra
+        # fields into the subtext, and it never displays row icons for
+        # picker rows). So send glyph/label/address only; the address comes
+        # back as the subtext. Real app icons live in the top-bar widget,
+        # which resolves them via Quickshell directly.
+        options.append(f"{glyph_for(cls)}\t{label}\t{addr}")
 
     try:
         sel = subprocess.run(
@@ -158,9 +159,11 @@ def main():
     except subprocess.CalledProcessError:
         sys.exit(1)  # user cancelled
 
-    # selection is "label<TAB>address"
-    addr = sel.split("\t")[-1].strip()
-    if not addr or not addr.startswith("0x"):
+    # Selection is "label<TAB>address". Find the 0x field robustly
+    # (older 4-field rows returned "label<TAB>addr<TAB>icon").
+    parts = sel.split("\t")
+    addr = next((p.strip() for p in parts if p.strip().startswith("0x")), "")
+    if not addr:
         print(f"could not parse selection: {sel!r}", file=sys.stderr)
         sys.exit(1)
 

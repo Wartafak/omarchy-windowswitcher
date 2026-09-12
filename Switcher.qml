@@ -335,8 +335,12 @@ Item {
             else root.close()
             event.accepted = true
           } else if (event.key === Qt.Key_Tab) {
-            root.select((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
-            event.accepted = true
+            // Only Super+Tab cycles (plain Tab is ignored); the Hypr
+            // binding also summons a cycle, which the compositor consumes.
+            if (event.modifiers & Qt.MetaModifier) {
+              root.select((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+              event.accepted = true
+            }
           } else if (event.key === Qt.Key_Up) {
             root.select(-1)
             event.accepted = true

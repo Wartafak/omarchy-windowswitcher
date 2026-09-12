@@ -26,6 +26,9 @@ Item {
   property var rows: []
   // Resolved hyprctl addresses parallel to rows (matched by key).
   property var rowAddrs: []
+  // Workspace names parallel to rows (hyprctl is authoritative; QML names
+  // may be empty).
+  property var rowWs: []
 
   property color background: Color.menu.background
   property color foreground: Color.menu.text
@@ -116,7 +119,14 @@ Item {
     return s.length > 0 ? s : root.appId(t)
   }
   function wsName(t) {
-    return (t && t.workspace) ? String(t.workspace.name || "") : ""
+    if (!t || !t.workspace) return ""
+    try {
+      var n = String(t.workspace.name || "")
+      if (n.length > 0) return n
+      // QML workspace names can come through empty; fall back to the id.
+      var id = t.workspace.id
+      return (id !== undefined && id !== null) ? String(id) : ""
+    } catch (e) { return "" }
   }
 
   function iconFor(t) {
@@ -252,6 +262,7 @@ Item {
           var clients = JSON.parse(text)
           var used = {}
           var addrs = []
+          var wsNames = []
           for (var i = 0; i < root.rows.length; i++) {
             var t = root.rows[i]
             var cls = "", ttl = ""
@@ -260,6 +271,7 @@ Item {
               ttl = String((t && t.title) || "")
             } catch (e) { }
             var found = ""
+            var foundWs = ""
             // Pass 1: exact class+title+workspace; pass 2: class+title.
             for (var pass = 0; pass < 2 && !found; pass++) {
               for (var j = 0; j < clients.length; j++) {
@@ -274,13 +286,22 @@ Item {
                   if (cws !== root.wsName(t)) continue
                 }
                 found = String(c.address || "")
+                try { foundWs = String((c.workspace && (c.workspace.name || c.workspace.id)) || "") } catch (e) { foundWs = "" }
                 used[j] = true
                 break
               }
             }
             addrs.push(found)
+            wsNames.push(foundWs)
           }
           root.rowAddrs = addrs
+          root.rowWs = wsNames
+          // Push authoritative workspace names into the visible rows.
+          for (var k = 0; k < wsNames.length && k < displayModel.count; k++) {
+            if (wsNames[k] && displayModel.get(k).ws !== wsNames[k]) {
+              displayModel.set(k, { ws: wsNames[k] })
+            }
+          }
         } catch (e) { }
       }
     }

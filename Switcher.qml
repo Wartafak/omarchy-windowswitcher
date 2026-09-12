@@ -473,15 +473,28 @@ Item {
                 }
               }
 
-              Text {
+              Rectangle {
                 id: wsTag
-                textFormat: Text.PlainText
-                text: row.ws
-                color: row.hasCursor ? root.selectedText : root.foreground
-                opacity: 0.5
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
+                visible: row.ws.length > 0
+                width: wsLabel.implicitWidth + Style.space(16)
+                height: wsLabel.implicitHeight + Style.space(10)
+                radius: height / 2
                 anchors.verticalCenter: parent.verticalCenter
+                color: "transparent"
+                border.width: 1
+                border.color: row.hasCursor ? root.selectedText : Util.alpha(root.foreground, 0.35)
+
+                Text {
+                  id: wsLabel
+                  textFormat: Text.PlainText
+                  anchors.centerIn: parent
+                  text: row.ws
+                  color: row.hasCursor ? root.selectedText : root.foreground
+                  opacity: row.hasCursor ? 1 : 0.75
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  font.weight: Font.Medium
+                }
               }
             }
 

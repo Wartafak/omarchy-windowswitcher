@@ -106,6 +106,13 @@ BarWidget {
         var s = t ? String(t.title || "") : ""
         return s.length > 0 ? s : appId(t)
     }
+    function wsName(t) {
+        return (t && t.workspace) ? String(t.workspace.name || "") : ""
+    }
+    function tooltip(t) {
+        var ws = wsName(t)
+        return ws.length > 0 ? ("[" + ws + "] " + title(t)) : title(t)
+    }
 
     function iconFor(t) {
         var raw = appId(t)
@@ -206,7 +213,7 @@ BarWidget {
                                 if (typeof cell.win.close === "function") cell.win.close()
                             }
                         }
-                        onEntered: if (root.bar) root.bar.showTooltip(cell, root.title(cell.win))
+                        onEntered: if (root.bar) root.bar.showTooltip(cell, root.tooltip(cell.win))
                         onExited: if (root.bar) root.bar.hideTooltip(cell)
                     }
                 }

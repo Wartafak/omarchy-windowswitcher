@@ -1,0 +1,401 @@
+// Switcher.qml — wartafak.taskswitcher (TasksWitcher) overlay
+// Quickshell-native Super+Tab window switcher: real app icons, live list,
+// in-process activation (no hyprctl). switcher.py stays as fallback.
+
+import QtQuick
+import Quickshell
+import Quickshell.Hyprland
+import Quickshell.Io
+import Quickshell.Wayland
+import qs.Commons
+import qs.Ui
+
+Item {
+  id: root
+
+  property var shell: null
+  property var manifest: null
+  property bool opened: false
+  property string filterText: ""
+  property int selectedIndex: 0
+  property bool cursorActive: true
+
+  // Stable creation-order registry (same approach as BarWidget).
+  property var knownWindows: []
+  property var rows: []
+
+  property color background: Color.menu.background
+  property color foreground: Color.menu.text
+  property color border: Color.menu.border
+  property var borderSpec: Border.surfaceSpec("menu", "border", border, Math.max(1, Style.space(2)))
+  property color scrim: Color.menu.scrim
+  property color selectedBackground: Color.menu.selectedBackground
+  property color selectedText: Color.menu.selectedText
+  property var selectedBorderSpec: Border.surfaceSpec("menu", "selected-border", selectedBackground, 0)
+  readonly property int cornerRadius: Style.cornerRadius
+  property string fontFamily: Style.font.menuFamily
+  property int contentMargin: Style.spacing.panelPadding
+  property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
+  property int contentSpacing: Style.spacing.md
+  property int cardWidth: Math.min(Style.space(550), panel.width - Style.gapsOut * 2)
+  property int rowHeight: Math.max(Style.space(50), Style.font.body + Style.spacing.rowPaddingX * 2)
+
+  readonly property var allToplevels: ToplevelManager.toplevels ? ToplevelManager.toplevels.values : []
+
+  function open(payloadJson) {
+    root.syncWindows()
+    root.filterText = ""
+    root.selectedIndex = 0
+    root.cursorActive = true
+    root.rebuildDisplay()
+    root.opened = true
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function close() {
+    root.opened = false
+    root.filterText = ""
+  }
+
+  function toggle() {
+    if (root.opened) root.close()
+    else root.open("{}")
+  }
+
+  function ping() { return "ok" }
+
+  function syncWindows() {
+    var live = root.allToplevels || []
+    var next = []
+    var i, j
+    for (i = 0; i < root.knownWindows.length; i++) {
+      for (j = 0; j < live.length; j++) {
+        if (live[j] === root.knownWindows[i]) { next.push(root.knownWindows[i]); break }
+      }
+    }
+    for (i = 0; i < live.length; i++) {
+      if (live[i] && next.indexOf(live[i]) === -1) next.push(live[i])
+    }
+    root.knownWindows = next
+  }
+
+  function isSpecial(t) {
+    var ws = t && t.workspace
+    var n = ws ? String(ws.name || "") : ""
+    return n.indexOf("special:") === 0
+  }
+
+  function appId(t) { return String((t && t.appId) || "").trim() }
+  function title(t) {
+    var s = t ? String(t.title || "") : ""
+    return s.length > 0 ? s : root.appId(t)
+  }
+  function wsName(t) {
+    return (t && t.workspace) ? String(t.workspace.name || "") : ""
+  }
+
+  function iconFor(t) {
+    var raw = root.appId(t)
+    if (!raw) return Quickshell.iconPath("application-x-executable", true) || ""
+    var low = raw.toLowerCase()
+    var alias = {
+      "ghostty": "com.mitchellh.ghostty",
+      "vscode": "code",
+      "code - oss": "code"
+    }
+    var names = alias[low] ? [alias[low], raw, low] : [raw, low]
+    for (var i = 0; i < names.length; i++) {
+      var p = Quickshell.iconPath(names[i], true)
+      if (p && p.length > 0 && p.indexOf("application-x-executable") === -1) return p
+    }
+    return Quickshell.iconPath("application-x-executable", true) || ""
+  }
+
+  function rebuildDisplay() {
+    var q = root.filterText.trim().toLowerCase()
+    var out = []
+    for (var i = 0; i < root.knownWindows.length; i++) {
+      var t = root.knownWindows[i]
+      if (!t || root.isSpecial(t)) continue
+      if (q) {
+        var hay = (root.appId(t) + " " + root.title(t)).toLowerCase()
+        if (hay.indexOf(q) < 0) continue
+      }
+      out.push(t)
+    }
+    // Most recently focused first when unfiltered (active window on top).
+    if (!q && ToplevelManager.activeToplevel) {
+      var ai = out.indexOf(ToplevelManager.activeToplevel)
+      if (ai > 0) {
+        var act = out.splice(ai, 1)
+        out = act.concat(out)
+      }
+    }
+    root.rows = out
+    if (root.selectedIndex >= out.length) root.selectedIndex = Math.max(0, out.length - 1)
+    if (root.selectedIndex < 0) root.selectedIndex = 0
+    displayModel.clear()
+    for (var k = 0; k < out.length; k++) {
+      displayModel.append({
+        label: root.appId(out[k]) || "window",
+        detail: root.title(out[k]),
+        ws: root.wsName(out[k]),
+        icon: root.iconFor(out[k])
+      })
+    }
+    Qt.callLater(function() {
+      if (displayModel.count > 0) resultList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
+    })
+  }
+
+  function select(delta) {
+    if (displayModel.count === 0) return
+    root.disarmPointer()
+    if (!root.cursorActive) {
+      root.cursorActive = true
+      root.selectedIndex = delta < 0 ? displayModel.count - 1 : 0
+    } else {
+      root.selectedIndex = (root.selectedIndex + delta + displayModel.count) % displayModel.count
+    }
+    resultList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
+  }
+
+  function setFilter(f) {
+    root.filterText = f
+    root.selectedIndex = 0
+    root.cursorActive = true
+    root.disarmPointer()
+    root.rebuildDisplay()
+  }
+
+  function disarmPointer() { pointerGate.reset() }
+
+  function selectFromPointer(index, item, mouse) {
+    if (!pointerGate.moved(item, mouse)) return
+    root.cursorActive = true
+    root.selectedIndex = index
+  }
+
+  function activateIndex(index) {
+    if (index < 0 || index >= root.rows.length) return
+    var t = root.rows[index]
+    root.opened = false
+    root.filterText = ""
+    if (t && typeof t.activate === "function") t.activate()
+  }
+
+  Connections {
+    target: ToplevelManager.toplevels
+    function onValuesChanged() {
+      root.syncWindows()
+      if (root.opened) root.rebuildDisplay()
+    }
+  }
+
+  Component.onCompleted: root.syncWindows()
+
+  ListModel { id: displayModel }
+
+  PointerMoveGate {
+    id: pointerGate
+    referenceItem: card
+  }
+
+  PanelWindow {
+    id: panel
+    visible: root.opened
+    anchors { top: true; bottom: true; left: true; right: true }
+    color: "transparent"
+    WlrLayershell.namespace: "wartafak-taskswitcher"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    exclusionMode: ExclusionMode.Ignore
+
+    Rectangle {
+      anchors.fill: parent
+      color: root.scrim
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      onClicked: root.close()
+    }
+
+    BorderSurface {
+      id: card
+      width: root.cardWidth
+      height: Math.min(contentCol.implicitHeight + root.contentMargin * 2, panel.height - Style.gapsOut * 2)
+      radius: root.cornerRadius
+      anchors.centerIn: parent
+      color: root.background
+      borderSpec: root.borderSpec
+      padding: root.contentMargin
+
+      MouseArea { anchors.fill: parent; onClicked: {} }
+
+      Item {
+        id: keyCatcher
+        anchors.fill: parent
+        focus: true
+
+        Keys.priority: Keys.BeforeItem
+        Keys.onPressed: function(event) {
+          if (event.key === Qt.Key_Escape) {
+            if (root.filterText) root.setFilter("")
+            else root.close()
+            event.accepted = true
+          } else if (event.key === Qt.Key_Tab) {
+            root.select((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+            event.accepted = true
+          } else if (event.key === Qt.Key_Up) {
+            root.select(-1)
+            event.accepted = true
+          } else if (event.key === Qt.Key_Down) {
+            root.select(1)
+            event.accepted = true
+          } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+            root.activateIndex(root.selectedIndex)
+            event.accepted = true
+          } else if (event.key === Qt.Key_Backspace && !root.filterText) {
+            event.accepted = true
+          } else if (Util.editsFilter(event, root.filterText)) {
+            root.setFilter(Util.editedFilter(event, root.filterText))
+            event.accepted = true
+          } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127 && (event.modifiers === Qt.NoModifier || event.modifiers === Qt.ShiftModifier)) {
+            root.setFilter(root.filterText + event.text)
+            event.accepted = true
+          }
+        }
+      }
+
+      Column {
+        id: contentCol
+        width: parent.width
+        spacing: root.contentSpacing
+
+        Text {
+          textFormat: Text.PlainText
+          width: parent.width
+          text: root.filterText || "Windows…"
+          color: root.foreground
+          opacity: root.filterText ? 1 : 0.58
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.heading
+          elide: Text.ElideRight
+        }
+
+        ListView {
+          id: resultList
+          width: parent.width
+          height: Math.min(displayModel.count * (root.rowHeight + 4), Math.round(panel.height * 0.5))
+          visible: displayModel.count > 0
+          model: displayModel
+          clip: true
+          spacing: 4
+          boundsBehavior: Flickable.StopAtBounds
+
+          delegate: BorderSurface {
+            id: row
+            required property int index
+            required property string label
+            required property string detail
+            required property string ws
+            required property string icon
+
+            readonly property bool hasCursor: root.cursorActive && row.index === root.selectedIndex
+
+            width: ListView.view.width
+            height: root.rowHeight
+            radius: root.cornerRadius
+            color: row.hasCursor ? root.selectedBackground : "transparent"
+            borderSpec: row.hasCursor ? root.selectedBorderSpec : Border.none()
+
+            Row {
+              anchors.fill: parent
+              anchors.leftMargin: Style.space(12)
+              anchors.rightMargin: Style.space(12)
+              spacing: Style.space(10)
+
+              Image {
+                width: Style.font.iconLarge
+                height: Style.font.iconLarge
+                anchors.verticalCenter: parent.verticalCenter
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                mipmap: true
+                cache: true
+                source: row.icon
+                sourceSize: Qt.size(96, 96)
+              }
+
+              Column {
+                width: parent.width - Style.font.iconLarge - parent.spacing * 2 - wsTag.width
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 2
+
+                Text {
+                  textFormat: Text.PlainText
+                  width: parent.width
+                  text: row.label
+                  color: row.hasCursor ? root.selectedText : root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.heading
+                  font.weight: Font.Medium
+                  elide: Text.ElideRight
+                }
+
+                Text {
+                  textFormat: Text.PlainText
+                  width: parent.width
+                  text: row.detail
+                  visible: row.detail.length > 0
+                  color: row.hasCursor ? root.selectedText : root.foreground
+                  opacity: row.hasCursor ? 0.85 : 0.55
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  elide: Text.ElideRight
+                }
+              }
+
+              Text {
+                id: wsTag
+                textFormat: Text.PlainText
+                text: row.ws
+                color: row.hasCursor ? root.selectedText : root.foreground
+                opacity: 0.5
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                anchors.verticalCenter: parent.verticalCenter
+              }
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onEntered: root.selectFromPointer(row.index, row, { x: mouseX, y: mouseY })
+              onPositionChanged: function(mouse) { root.selectFromPointer(row.index, row, mouse) }
+              onClicked: {
+                root.cursorActive = true
+                root.selectedIndex = row.index
+                root.activateIndex(row.index)
+              }
+            }
+          }
+        }
+
+        Text {
+          textFormat: Text.PlainText
+          visible: displayModel.count === 0
+          width: parent.width
+          horizontalAlignment: Text.AlignHCenter
+          text: "No open windows"
+          color: root.foreground
+          opacity: 0.6
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.title
+        }
+      }
+    }
+  }
+}

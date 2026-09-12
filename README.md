@@ -11,7 +11,6 @@ Window tracking approach inspired by
 
 - **Persistent (top bar):** `BarWidget.qml` — little icons for open windows. Click to focus, middle/right-click to close. No overlay, no layout disturbance.
 - **On-demand (Super+Tab):** `Switcher.qml` overlay — native Quickshell picker with real app icons, live list via `ToplevelManager`, Tab/Shift+Tab + arrows + type-to-filter, Enter to focus. Summoned with `omarchy-shell shell toggle wartafak.taskswitcher`.
-- **Fallback:** `switcher.py` — out-of-process picker via `hyprctl` + `omarchy-menu-select` (glyphs only, stock menu limitation). Kept if the overlay ever misbehaves; rebind Super+Tab to it.
 
 ## Behavior (bar)
 
@@ -43,7 +42,6 @@ o.bind("SUPER + TAB", "All windows", "omarchy-shell shell toggle wartafak.tasksw
 - `manifest.json` — id `wartafak.taskswitcher`, kinds `bar-widget` + `overlay`
 - `BarWidget.qml` — icon strip (BarWidget base, RowLayout + Repeater)
 - `Switcher.qml` — Super+Tab overlay (PanelWindow, live ToplevelManager list)
-- `switcher.py` — fallback Super+Tab picker (hyprctl + omarchy-menu-select)
 
 ## Notes
 

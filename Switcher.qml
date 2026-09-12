@@ -273,15 +273,26 @@ Item {
         width: parent.width
         spacing: root.contentSpacing
 
-        Text {
-          textFormat: Text.PlainText
+        Rectangle {
           width: parent.width
-          text: root.filterText || "Windows…"
-          color: root.foreground
-          opacity: root.filterText ? 1 : 0.58
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.heading
-          elide: Text.ElideRight
+          height: root.headerHeight
+          radius: root.cornerRadius
+          color: "transparent"
+
+          Text {
+            textFormat: Text.PlainText
+            anchors.left: parent.left
+            anchors.leftMargin: Style.space(8)
+            anchors.right: parent.right
+            anchors.rightMargin: Style.space(8)
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.filterText || "Windows…"
+            color: root.foreground
+            opacity: root.filterText ? 1 : 0.58
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.heading
+            elide: Text.ElideRight
+          }
         }
 
         ListView {

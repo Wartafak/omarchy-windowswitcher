@@ -58,9 +58,11 @@ Item {
       // does not stick, so selection is applied on close (release/Enter).
       root.select(action === "cycleBack" ? -1 : 1)
       root.confirmOnSuperRelease = true
+      root.dbg("cycle sel=" + root.selectedIndex)
       Qt.callLater(function() { keyCatcher.forceActiveFocus() })
       return
     }
+    root.dbg("fresh-open wasOpened=" + root.opened)
     root.syncWindows()
     root.filterText = ""
     root.selectedIndex = 0
@@ -77,18 +79,24 @@ Item {
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
-  function close() {
+  function close(reason) {
+    root.dbg("close reason=" + (reason || "?") + " wasOpened=" + root.opened)
     root.opened = false
     root.filterText = ""
     root.confirmOnSuperRelease = false
   }
 
   function toggle() {
-    if (root.opened) root.close()
+    if (root.opened) root.close("toggle")
     else root.open("{}")
   }
 
   function ping() { return "ok" }
+
+  // TEMP DEBUG — remove once first-release behavior is diagnosed.
+  function dbg(msg) {
+    try { Quickshell.execDetached(["bash", "-c", "echo \"$(date +%T.%3N) " + String(msg).replace(/"/g, "'") + "\" >> /tmp/tswitch.log"]) } catch (e) { }
+  }
 
   function syncWindows() {
     var live = root.allToplevels || []
@@ -308,7 +316,7 @@ Item {
 
     MouseArea {
       anchors.fill: parent
-      onClicked: root.close()
+      onClicked: root.close("scrim")
     }
 
     BorderSurface {
@@ -332,7 +340,7 @@ Item {
         Keys.onPressed: function(event) {
           if (event.key === Qt.Key_Escape) {
             if (root.filterText) root.setFilter("")
-            else root.close()
+            else root.close("esc")
             event.accepted = true
           } else if (event.key === Qt.Key_Tab) {
             root.select((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
@@ -362,6 +370,7 @@ Item {
           if (event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R
               || event.key === Qt.Key_Meta) {
             event.accepted = true
+            root.dbg("super-release flag=" + root.confirmOnSuperRelease)
             // Plain open + release keeps the overlay open; release after
             // cycling applies the highlight. Esc/scrim dismisses.
             if (root.confirmOnSuperRelease) root.activateIndex(root.selectedIndex)

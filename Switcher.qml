@@ -44,6 +44,13 @@ Item {
   readonly property var allToplevels: ToplevelManager.toplevels ? ToplevelManager.toplevels.values : []
 
   function open(payloadJson) {
+    var action = ""
+    try { action = JSON.parse(payloadJson || "{}").action || "" } catch (e) { action = "" }
+    if (root.opened && (action === "cycle" || action === "cycleBack")) {
+      root.select(action === "cycleBack" ? -1 : 1)
+      Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+      return
+    }
     root.syncWindows()
     root.filterText = ""
     root.selectedIndex = 0

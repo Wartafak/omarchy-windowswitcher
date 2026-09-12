@@ -38,7 +38,8 @@ Item {
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
   property int contentSpacing: Style.spacing.md
   property int cardWidth: Math.min(Style.space(550), panel.width - Style.gapsOut * 2)
-  property int rowHeight: Math.max(Style.space(50), Style.font.body + Style.spacing.rowPaddingX * 2)
+  property int switcherIconPx: Style.font.iconLarge * 2
+  property int rowHeight: Math.max(Style.space(50), root.switcherIconPx + Style.space(16), Style.font.body + Style.spacing.rowPaddingX * 2)
 
   readonly property var allToplevels: ToplevelManager.toplevels ? ToplevelManager.toplevels.values : []
 
@@ -328,19 +329,19 @@ Item {
               spacing: Style.space(10)
 
               Image {
-                width: Style.font.iconLarge
-                height: Style.font.iconLarge
+                width: root.switcherIconPx
+                height: root.switcherIconPx
                 anchors.verticalCenter: parent.verticalCenter
                 fillMode: Image.PreserveAspectFit
                 smooth: true
                 mipmap: true
                 cache: true
                 source: row.icon
-                sourceSize: Qt.size(96, 96)
+                sourceSize: Qt.size(192, 192)
               }
 
               Column {
-                width: parent.width - Style.font.iconLarge - parent.spacing * 2 - wsTag.width
+                width: parent.width - root.switcherIconPx - parent.spacing * 2 - wsTag.width
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 2
 

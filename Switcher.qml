@@ -19,6 +19,7 @@ Item {
   property string filterText: ""
   property int selectedIndex: 0
   property bool cursorActive: true
+  property bool confirmOnSuperRelease: false
 
   // Stable creation-order registry (same approach as BarWidget).
   property var knownWindows: []
@@ -46,6 +47,10 @@ Item {
   function open(payloadJson) {
     var action = ""
     try { action = JSON.parse(payloadJson || "{}").action || "" } catch (e) { action = "" }
+    if (action === "confirm") {
+      if (root.opened) root.activateIndex(root.selectedIndex)
+      return
+    }
     if (root.opened && (action === "cycle" || action === "cycleBack")) {
       root.select(action === "cycleBack" ? -1 : 1)
       Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -55,6 +60,10 @@ Item {
     root.filterText = ""
     root.selectedIndex = 0
     root.cursorActive = true
+    // Releasing Super after a Super+Tab open confirms (macOS-style).
+    // Cleared on close; typing/clicking keeps it — Super+letter is a
+    // compositor bind, so a Super release while open means "done".
+    root.confirmOnSuperRelease = (action === "cycle" || action === "cycleBack")
     root.rebuildDisplay()
     root.opened = true
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -63,6 +72,7 @@ Item {
   function close() {
     root.opened = false
     root.filterText = ""
+    root.confirmOnSuperRelease = false
   }
 
   function toggle() {
@@ -272,6 +282,15 @@ Item {
           } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127 && (event.modifiers === Qt.NoModifier || event.modifiers === Qt.ShiftModifier)) {
             root.setFilter(root.filterText + event.text)
             event.accepted = true
+          }
+        }
+
+        Keys.onReleased: function(event) {
+          if (!root.opened || !root.confirmOnSuperRelease) return
+          if (event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R
+              || event.key === Qt.Key_Meta) {
+            event.accepted = true
+            root.activateIndex(root.selectedIndex)
           }
         }
       }

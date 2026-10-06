@@ -118,6 +118,11 @@ Item {
 
   function ping() { return "ok" }
 
+  // State query for the Hyprland arrow router (see bindings.lua):
+  // "true" while the overlay is open, "false" otherwise. Reached via
+  // `omarchy-shell shell call wartafak.windowswitcher isOpen '{}'`.
+  function isOpen() { return root.opened ? "true" : "false" }
+
   function touchMru(t) {
     if (!t) return
     // Rebuild instead of mutating: QML var arrays don't notify on

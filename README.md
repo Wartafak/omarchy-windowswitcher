@@ -2,8 +2,6 @@
 
 Show and navigate currently open windows. Yes, the pun is intended — toss a Window to your switcher.
 
-Merged from `pedromota.taskbar` (persistent top-bar view) + `omarchy-windows` script (on-demand switcher).
-
 Window tracking approach inspired by
 [rosakodu/omarchy-dock](https://github.com/rosakodu/omarchy-dock) (MIT).
 
@@ -48,6 +46,11 @@ Quick `Super+Tab` tap toggles between current and last window. `Esc` closes,
 `Enter`/click focuses. After editing QML or bindings, reload with
 `hyprctl reload` + `omarchy-restart-shell` — the running shell does not pick
 up plugin changes on its own.
+
+`Super+Up/Down` is context-aware: while the switcher is open it moves the
+selection (`cycleBack`/`cycle`), otherwise it keeps Hyprland's directional
+window focus. This is a small router in `bindings.lua` that asks the
+switcher via `omarchy-shell shell call wartafak.windowswitcher isOpen`.
 
 ## Files
 

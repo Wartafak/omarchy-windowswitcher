@@ -1,4 +1,4 @@
-// BarWidget.qml — wartafak.windowswitcher (WindowsWitcher) v1.0.0
+// BarWidget.qml — wartafak.windowswitcher (WindowsWitcher) v1.2.0
 // Top-bar taskbar: little icons for open windows, no overlay, no layout disturbance.
 // Window source + icon approach inspired by rosakodu/omarchy-dock (MIT):
 // ToplevelManager.toplevels, toplevel.activate()/close(), Quickshell.iconPath lookup.

@@ -1,6 +1,6 @@
 // Switcher.qml — wartafak.windowswitcher (WindowsWitcher) overlay
 // Quickshell-native Super+Tab window switcher: real app icons, live list,
-// in-process activation (no hyprctl). switcher.py stays as fallback.
+// in-process activation plus hyprctl address fallback.
 
 import QtQuick
 import Quickshell

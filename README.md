@@ -47,10 +47,10 @@ Under the hood:
 - `./tests/integration.sh`: live end-to-end test via shell IPC + `hyprctl`
 - `isOpen` / `debugState` IPC accessors for scripting and diagnosis
 
-## Commands
+## Install
 
-```bash
-omarchy plugin validate ~/.config/omarchy/plugins/wartafak.windowswitcher
+```sh
+omarchy plugin add https://github.com/Wartafak/omarchy-windowswitcher.git --enable
 omarchy bar put wartafak.windowswitcher --section left --after omarchy.workspaces
 ```
 
@@ -68,14 +68,35 @@ macOS-style: first `Super+Tab` already highlights the last focused window
 `Super` is held, releasing `Super` focuses the highlight via the `confirm`
 release binding (the overlay's own `Super`-release handler is a fallback).
 Quick `Super+Tab` tap toggles between current and last window. `Esc` closes,
-`Enter`/click focuses. After editing QML or bindings, reload with
-`hyprctl reload` + `omarchy-restart-shell` — the running shell does not pick
-up plugin changes on its own.
+`Enter`/click focuses.
 
 `Super+Up/Down` is context-aware: while the switcher is open it moves the
 selection (`cycleBack`/`cycle`), otherwise it keeps Hyprland's directional
 window focus. This is a small router in `bindings.lua` that asks the
 switcher via `omarchy-shell shell call wartafak.windowswitcher isOpen`.
+
+The plugin never modifies your configuration on its own — the `bindings.lua`
+entries above are an opt-in manual step. After editing QML or bindings,
+reload with `hyprctl reload` + `omarchy-restart-shell`.
+
+## Remove
+
+```sh
+omarchy plugin remove wartafak.windowswitcher
+```
+
+Also delete the `bindings.lua` entries you added above, if any.
+
+## Dependencies
+
+- Omarchy Quattro shell (Quickshell) and Hyprland (`hyprctl` ships with
+  Hyprland).
+- No extra packages, no elevated privileges, no background services.
+  Window tracking runs in-process in the shell.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
 
 ## Files
 
@@ -98,6 +119,7 @@ test. QML keeps only thin adapters plus live-QObject field extraction
 (which the library never touches, so closed windows can't leak into tests).
 
 ```bash
+omarchy plugin validate ~/.config/omarchy/plugins/wartafak.windowswitcher
 node --test tests/   # 36 unit tests, no runner to install
 ./tests/integration.sh  # live: needs the shell + >= 2 windows, net-zero focus change
 ```

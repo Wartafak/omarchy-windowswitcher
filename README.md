@@ -5,6 +5,48 @@ Show and navigate currently open windows. Yes, the pun is intended — the windo
 Window tracking approach inspired by
 [rosakodu/omarchy-dock](https://github.com/rosakodu/omarchy-dock) (MIT).
 
+## Screenshots
+
+Top-bar icon strip and the `Super+Tab` switcher:
+
+![Top-bar window icons](screenshots/bar.png)
+![Super+Tab window switcher](screenshots/switcher.png)
+
+## Features
+
+Top bar (`BarWidget.qml`):
+
+- One icon per open window, with real app icons (same lookup as the switcher)
+- Active window highlighted with `Color.accent`, the rest get a running dot
+- Left-click focuses, middle/right-click closes, hover shows a title tooltip
+- Hides itself when there are no windows (zero width, no layout disturbance)
+- `showAllWorkspaces: true` by default (Windows-like); set `false` in the
+  layout entry to show only the focused workspace
+- Special workspaces (e.g. scratchpad) are excluded
+
+Switcher overlay (`Switcher.qml`, `Super+Tab`):
+
+- Quick tap toggles between the current and the last focused window
+- Hold `Super` and press `Tab` / `Shift+Tab` to cycle through windows
+- Releasing `Super` focuses the highlighted window (compositor-level
+  release binding, with an in-overlay fallback)
+- `Up`/`Down` move the selection; selection also commits on `Super` release
+- Type-to-filter, `Enter`/click to focus, `Esc` (or scrim click) to dismiss
+- MRU ordering seeded from Hyprland's `focusHistoryID`, then tracked live
+- Workspace badges resolved authoritatively via `hyprctl`
+- Focus applied in-process plus `hyprctl` address fallback
+- Persistent picker mode when summoned without `Super` (stays open for
+  typing/arrows/`Enter`)
+- Context-aware `Super+Up/Down` (see `bindings.lua`): selection while open,
+  directional window focus otherwise
+
+Under the hood:
+
+- Shared `SwitcherLogic.js`: all decisions as pure, unit-tested functions
+  (`node --test tests/`, no dependencies)
+- `./tests/integration.sh`: live end-to-end test via shell IPC + `hyprctl`
+- `isOpen` / `debugState` IPC accessors for scripting and diagnosis
+
 ## Two views, one purpose
 
 - **Persistent (top bar):** `BarWidget.qml` — little icons for open windows. Click to focus, middle/right-click to close. No overlay, no layout disturbance.
@@ -57,6 +99,8 @@ switcher via `omarchy-shell shell call wartafak.windowswitcher isOpen`.
 - `manifest.json` — id `wartafak.windowswitcher`, kinds `bar-widget` + `overlay`
 - `BarWidget.qml` — icon strip (BarWidget base, RowLayout + Repeater)
 - `Switcher.qml` — Super+Tab overlay (PanelWindow, live ToplevelManager list)
+- `preview.png` — marketplace preview (the switcher overlay)
+- `screenshots/` — `bar.png` (top-bar strip), `switcher.png` (overlay)
 - `SwitcherLogic.js` — pure decision logic (open dispatch, selection math,
   MRU ordering, hyprctl matching), shared by QML and the unit tests
 - `tests/logic.test.js` — unit tests, no dependencies

@@ -57,6 +57,28 @@ switcher via `omarchy-shell shell call wartafak.windowswitcher isOpen`.
 - `manifest.json` — id `wartafak.windowswitcher`, kinds `bar-widget` + `overlay`
 - `BarWidget.qml` — icon strip (BarWidget base, RowLayout + Repeater)
 - `Switcher.qml` — Super+Tab overlay (PanelWindow, live ToplevelManager list)
+- `SwitcherLogic.js` — pure decision logic (open dispatch, selection math,
+  MRU ordering, hyprctl matching), shared by QML and the unit tests
+- `tests/logic.test.js` — unit tests, no dependencies
+- `tests/integration.sh` — live end-to-end test via shell IPC + hyprctl
+
+## Testing
+
+All switcher decisions live in `SwitcherLogic.js` as dependency-free
+functions, imported by `Switcher.qml` (`import "SwitcherLogic.js" as Logic`)
+and by Node directly — so the same code that runs in the shell runs under
+test. QML keeps only thin adapters plus live-QObject field extraction
+(which the library never touches, so closed windows can't leak into tests).
+
+```bash
+node --test tests/   # 36 unit tests, no runner to install
+./tests/integration.sh  # live: needs the shell + >= 2 windows, net-zero focus change
+```
+
+The integration test drives the real overlay through
+`omarchy-shell shell summon/call` and the `debugState` accessor, asserting
+preselect (index 1), arming, focus switch, symmetric toggle-back and
+multi-cycle advance.
 
 ## Notes
 

@@ -9,6 +9,7 @@ import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
+import "SwitcherLogic.js" as Logic
 
 Item {
   id: root
@@ -54,20 +55,21 @@ Item {
   readonly property var allToplevels: ToplevelManager.toplevels ? ToplevelManager.toplevels.values : []
 
   function open(payloadJson) {
-    var action = ""
-    try { action = JSON.parse(payloadJson || "{}").action || "" } catch (e) { action = "" }
+    var action = Logic.parseAction(payloadJson)
     if (action === "confirm") {
       // Fired by the Super-release binding. Only commits in transient
       // (Super+Tab) mode; a no-op when closed or in persistent picker
       // mode, so unrelated Super taps are harmless. Idempotent with the
       // in-overlay Super-release handler (second one no-ops).
-      if (root.opened && root.confirmOnSuperRelease) root.activateIndex(root.selectedIndex)
+      if (Logic.confirmAllowed(root.opened, root.confirmOnSuperRelease)) {
+        root.activateIndex(root.selectedIndex)
+      }
       return
     }
-    if (root.opened && (action === "cycle" || action === "cycleBack")) {
+    if (root.opened && Logic.isCycleAction(action)) {
       // Highlight only — focusing while the overlay holds exclusivity
       // does not stick, so selection is applied on close (release/Enter).
-      root.select(action === "cycleBack" ? -1 : 1)
+      root.select(Logic.advanceDelta(action))
       root.confirmOnSuperRelease = true
       Qt.callLater(function() { keyCatcher.forceActiveFocus() })
       return
@@ -81,15 +83,11 @@ Item {
     root.cursorActive = true
     root.rebuildDisplay()
     root.opened = true
-    if (action === "cycle" || action === "cycleBack") {
+    if (Logic.isCycleAction(action)) {
       // macOS-style transient mode: first Tab already moves off the
       // current window, and releasing Super commits the highlight.
       // Quick Super+Tab tap => index 1 => toggles to last focused.
-      if (root.rows.length > 1) {
-        root.selectedIndex = (action === "cycleBack") ? root.rows.length - 1 : 1
-      } else {
-        root.selectedIndex = 0
-      }
+      root.selectedIndex = Logic.freshIndex(action, root.rows.length)
       root.confirmOnSuperRelease = true
       if (displayModel.count > 0) {
         resultList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
@@ -149,57 +147,19 @@ Item {
 
   function touchMru(t) {
     if (!t) return
-    // Rebuild instead of mutating: QML var arrays don't notify on
-    // in-place mutation, and a fresh array lets the old one get GC'd.
-    // Bounded by live window count (plus a hard cap), dead entries are
-    // dropped so closed windows are never retained.
-    var next = [t]
-    for (var i = 0; i < root.mruStack.length; i++) {
-      var e = root.mruStack[i]
-      if (e && e !== t) next.push(e)
-    }
-    // Prune dead toplevels (closed windows); cap length defensively.
-    var live = root.allToplevels || []
-    var pruned = []
-    for (var k = 0; k < next.length && pruned.length < 64; k++) {
-      var c = next[k]
-      if (!c) continue
-      try {
-        if (live.indexOf(c) !== -1) pruned.push(c)
-      } catch (err) { /* destroyed QObject: drop it */ }
-    }
-    root.mruStack = pruned
+    // Rebuilt (not mutated: QML var arrays don't notify on in-place
+    // mutation), pruned and bounded via the shared logic library so old
+    // arrays get GC'd and closed windows are never retained.
+    root.mruStack = Logic.mruTouch(root.mruStack, t, root.allToplevels || [], 64)
   }
 
   function syncWindows() {
     var live = root.allToplevels || []
-    var next = []
-    var i, j
-    for (i = 0; i < root.knownWindows.length; i++) {
-      for (j = 0; j < live.length; j++) {
-        if (live[j] === root.knownWindows[i]) { next.push(root.knownWindows[i]); break }
-      }
-    }
-    for (i = 0; i < live.length; i++) {
-      if (live[i] && next.indexOf(live[i]) === -1) next.push(live[i])
-    }
-    root.knownWindows = next
+    root.knownWindows = Logic.syncKnown(root.knownWindows, live)
     // Keep MRU in step: prune dead, append brand-new windows as least
     // recent (they have no focus history yet). Bounded by live count,
-    // so it can't grow across the session; old arrays get GC'd on
-    // reassignment.
-    var mru = []
-    for (i = 0; i < root.mruStack.length && mru.length < 64; i++) {
-      var me = root.mruStack[i]
-      if (!me) continue
-      try {
-        if (live.indexOf(me) !== -1) mru.push(me)
-      } catch (err) { /* destroyed QObject: drop it */ }
-    }
-    for (i = 0; i < live.length && mru.length < 64; i++) {
-      if (live[i] && mru.indexOf(live[i]) === -1) mru.push(live[i])
-    }
-    root.mruStack = mru
+    // so it can't grow across the session.
+    root.mruStack = Logic.mruSync(root.mruStack, live, 64)
   }
 
   function isSpecial(t) {
@@ -245,44 +205,15 @@ Item {
     var q = root.filterText.trim().toLowerCase()
     // MRU order when unfiltered (mruStack[0] = current/active), so
     // index 0 = current window, index 1 = last focused. Filtered
-    // searches keep MRU order too.
-    var ordered = []
-    var i, t
-    var useMru = root.mruStack && root.mruStack.length > 0
-    var src = useMru ? root.mruStack : root.knownWindows
-    for (i = 0; i < src.length; i++) {
-      t = src[i]
-      if (!t || root.isSpecial(t)) continue
-      // Dedupe by object identity guard (QML var arrays hold refs).
-      var dup = false
-      for (var d = 0; d < ordered.length; d++) {
-        if (ordered[d] === t) { dup = true; break }
-      }
-      if (!dup) ordered.push(t)
-    }
-    // Append any known window missing from MRU (shouldn't happen after
-    // syncWindows, but guards a fresh session before first focus event).
-    for (i = 0; i < root.knownWindows.length; i++) {
-      t = root.knownWindows[i]
-      if (!t || root.isSpecial(t)) continue
-      var has = false
-      for (var h = 0; h < ordered.length; h++) {
-        if (ordered[h] === t) { has = true; break }
-      }
-      if (!has) ordered.push(t)
-    }
-    var out = []
-    for (i = 0; i < ordered.length; i++) {
-      t = ordered[i]
-      if (q) {
-        var hay = (root.appId(t) + " " + root.title(t)).toLowerCase()
-        if (hay.indexOf(q) < 0) continue
-      }
-      out.push(t)
-    }
+    // searches keep MRU order too. Ordering/filtering/clamping live in
+    // the shared logic library (unit-tested); the closures below are the
+    // only place that touches live QObjects.
+    function skipFn(t) { return root.isSpecial(t) }
+    function hayFn(t) { return root.appId(t) + " " + root.title(t) }
+    var ordered = Logic.orderRows(root.mruStack, root.knownWindows, skipFn)
+    var out = Logic.filterRows(ordered, q, hayFn)
     root.rows = out
-    if (root.selectedIndex >= out.length) root.selectedIndex = Math.max(0, out.length - 1)
-    if (root.selectedIndex < 0) root.selectedIndex = 0
+    root.selectedIndex = Logic.clampIndex(root.selectedIndex, out.length)
     displayModel.clear()
     for (var k = 0; k < out.length; k++) {
       displayModel.append({
@@ -300,12 +231,9 @@ Item {
   function select(delta) {
     if (displayModel.count === 0) return
     root.disarmPointer()
-    if (!root.cursorActive) {
-      root.cursorActive = true
-      root.selectedIndex = delta < 0 ? displayModel.count - 1 : 0
-    } else {
-      root.selectedIndex = (root.selectedIndex + delta + displayModel.count) % displayModel.count
-    }
+    var wasActive = root.cursorActive
+    if (!wasActive) root.cursorActive = true
+    root.selectedIndex = Logic.stepIndex(root.selectedIndex, delta, displayModel.count, wasActive)
     resultList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
   }
 
@@ -326,7 +254,7 @@ Item {
   }
 
   function activateIndex(index) {
-    if (index < 0 || index >= root.rows.length) return
+    if (!Logic.inRange(index, root.rows.length)) return
     var t = root.rows[index]
     root.opened = false
     root.filterText = ""
@@ -388,9 +316,27 @@ Item {
       onStreamFinished: {
         try {
           var clients = JSON.parse(text)
-          var used = {}
-          var addrs = []
-          var wsNames = []
+          // Plain-data projections for the shared matcher (QObject
+          // fields are read here, with guards, so the library — and
+          // the unit tests — never touch live QObjects).
+          var plainClients = []
+          for (var c = 0; c < clients.length; c++) {
+            var cc = clients[c]
+            var ccWs = ""
+            var ccWsLabel = ""
+            try {
+              ccWs = String((cc.workspace && cc.workspace.name) || "")
+              ccWsLabel = String((cc.workspace && (cc.workspace.name || cc.workspace.id)) || "")
+            } catch (e) { }
+            plainClients.push({
+              cls: String(cc["class"] || "").trim(),
+              title: String(cc.title || ""),
+              ws: ccWs,
+              wsLabel: ccWsLabel,
+              address: String(cc.address || "")
+            })
+          }
+          var plainRows = []
           for (var i = 0; i < root.rows.length; i++) {
             var t = root.rows[i]
             var cls = "", ttl = ""
@@ -398,36 +344,15 @@ Item {
               cls = String((t && t.appId) || "").trim()
               ttl = String((t && t.title) || "")
             } catch (e) { }
-            var found = ""
-            var foundWs = ""
-            // Pass 1: exact class+title+workspace; pass 2: class+title.
-            for (var pass = 0; pass < 2 && !found; pass++) {
-              for (var j = 0; j < clients.length; j++) {
-                if (used[j]) continue
-                var c = clients[j]
-                var cc = String(c["class"] || "").trim()
-                var ct = String(c.title || "")
-                if (cc !== cls || ct !== ttl) continue
-                if (pass === 0) {
-                  var cws = ""
-                  try { cws = String((c.workspace && c.workspace.name) || "") } catch (e) { cws = "" }
-                  if (cws !== root.wsName(t)) continue
-                }
-                found = String(c.address || "")
-                try { foundWs = String((c.workspace && (c.workspace.name || c.workspace.id)) || "") } catch (e) { foundWs = "" }
-                used[j] = true
-                break
-              }
-            }
-            addrs.push(found)
-            wsNames.push(foundWs)
+            plainRows.push({ cls: cls, ttl: ttl, ws: root.wsName(t) })
           }
-          root.rowAddrs = addrs
-          root.rowWs = wsNames
+          var res = Logic.matchRowAddrs(plainRows, plainClients)
+          root.rowAddrs = res.addrs
+          root.rowWs = res.wsNames
           // Push authoritative workspace names into the visible rows.
-          for (var k = 0; k < wsNames.length && k < displayModel.count; k++) {
-            if (wsNames[k] && displayModel.get(k).ws !== wsNames[k]) {
-              displayModel.set(k, { ws: wsNames[k] })
+          for (var k = 0; k < res.wsNames.length && k < displayModel.count; k++) {
+            if (res.wsNames[k] && displayModel.get(k).ws !== res.wsNames[k]) {
+              displayModel.set(k, { ws: res.wsNames[k] })
             }
           }
         } catch (e) { }
@@ -449,8 +374,8 @@ Item {
           if (root.opened) return
           var clients = JSON.parse(text)
           var live = root.allToplevels || []
-          var used = {}
-          var scored = []
+          var liveKeys = []
+          var liveObjs = []
           for (var i = 0; i < live.length; i++) {
             var t = live[i]
             if (!t || root.isSpecial(t)) continue
@@ -459,23 +384,22 @@ Item {
               cls = String((t && t.appId) || "").trim()
               ttl = String((t && t.title) || "")
             } catch (e) { }
-            var best = -1, bestId = 1e9
-            for (var j = 0; j < clients.length; j++) {
-              if (used[j]) continue
-              var c = clients[j]
-              if (String(c["class"] || "").trim() !== cls) continue
-              if (String(c.title || "") !== ttl) continue
-              var fid = Number(c.focusHistoryID)
-              if (!(fid >= 0)) fid = 1e9
-              if (fid < bestId) { bestId = fid; best = j }
-            }
-            if (best >= 0) { used[best] = true; scored.push([bestId, t]) }
-            else scored.push([1e9, t])
+            liveKeys.push({ cls: cls, ttl: ttl })
+            liveObjs.push(t)
           }
-          scored.sort(function(a, b) { return a[0] - b[0] })
+          var plainClients = []
+          for (var j = 0; j < clients.length; j++) {
+            var cj = clients[j]
+            plainClients.push({
+              cls: String(cj["class"] || "").trim(),
+              title: String(cj.title || ""),
+              fid: cj.focusHistoryID
+            })
+          }
+          var order = Logic.seedOrder(liveKeys, plainClients)
           var ordered = []
-          for (var k = 0; k < scored.length && ordered.length < 64; k++) {
-            if (scored[k][1]) ordered.push(scored[k][1])
+          for (var k = 0; k < order.length && ordered.length < 64; k++) {
+            if (liveObjs[order[k]]) ordered.push(liveObjs[order[k]])
           }
           if (ordered.length > 0) root.mruStack = ordered
         } catch (e) { }

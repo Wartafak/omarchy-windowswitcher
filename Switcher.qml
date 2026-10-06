@@ -512,10 +512,14 @@ Item {
               event.accepted = true
             }
           } else if (event.key === Qt.Key_Up) {
+            // Arrow selection also arms Super-release confirm, same as
+            // Tab: navigating then releasing Super focuses the highlight.
             root.select(-1)
+            root.confirmOnSuperRelease = true
             event.accepted = true
           } else if (event.key === Qt.Key_Down) {
             root.select(1)
+            root.confirmOnSuperRelease = true
             event.accepted = true
           } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             root.activateIndex(root.selectedIndex)

@@ -123,6 +123,30 @@ Item {
   // `omarchy-shell shell call wartafak.windowswitcher isOpen '{}'`.
   function isOpen() { return root.opened ? "true" : "false" }
 
+  // Read-only diagnostics: selection, arming flag, row order and MRU
+  // order (appId/title, truncated). Reached via
+  // `omarchy-shell shell call wartafak.windowswitcher debugState '{}'`.
+  function debugState() {
+    function short(t) {
+      try {
+        return (String((t && t.appId) || "?") + " | " + String((t && t.title) || "")).substring(0, 48)
+      } catch (e) { return "?" }
+    }
+    var rows = [], mru = [], i
+    for (i = 0; i < root.rows.length; i++) rows.push(short(root.rows[i]))
+    for (i = 0; i < root.mruStack.length; i++) mru.push(short(root.mruStack[i]))
+    var active = null
+    try { active = short(ToplevelManager.activeToplevel) } catch (e) { }
+    return JSON.stringify({
+      opened: root.opened,
+      selectedIndex: root.selectedIndex,
+      confirmArmed: root.confirmOnSuperRelease,
+      active: active,
+      rows: rows,
+      mru: mru
+    })
+  }
+
   function touchMru(t) {
     if (!t) return
     // Rebuild instead of mutating: QML var arrays don't notify on

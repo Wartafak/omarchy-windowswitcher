@@ -23,6 +23,10 @@ Item {
 
   // Stable creation-order registry (same approach as BarWidget).
   property var knownWindows: []
+  // MRU stack, most-recently-focused first. Updated on every
+  // activeToplevel change so a quick Super+Tab tap can switch to the
+  // last focused window without waiting for hyprctl.
+  property var mruStack: []
   property var rows: []
   // Resolved hyprctl addresses parallel to rows (matched by key).
   property var rowAddrs: []
@@ -53,7 +57,11 @@ Item {
     var action = ""
     try { action = JSON.parse(payloadJson || "{}").action || "" } catch (e) { action = "" }
     if (action === "confirm") {
-      if (root.opened) root.activateIndex(root.selectedIndex)
+      // Fired by the Super-release binding. Only commits in transient
+      // (Super+Tab) mode; a no-op when closed or in persistent picker
+      // mode, so unrelated Super taps are harmless. Idempotent with the
+      // in-overlay Super-release handler (second one no-ops).
+      if (root.opened && root.confirmOnSuperRelease) root.activateIndex(root.selectedIndex)
       return
     }
     if (root.opened && (action === "cycle" || action === "cycleBack")) {
@@ -65,15 +73,33 @@ Item {
       return
     }
     root.syncWindows()
+    // Keep MRU tip in sync with the currently active window so a fresh
+    // open always has index 0 = current, index 1 = last focused.
+    root.touchMru(ToplevelManager.activeToplevel)
     root.filterText = ""
     root.selectedIndex = 0
     root.cursorActive = true
-    // First Super+Tab only opens; repeats cycle, so a Super release
-    // afterwards applies the highlight. Reset here so stale state from a
-    // previous confirm can never leak into a fresh open. Cleared on close.
-    root.confirmOnSuperRelease = false
     root.rebuildDisplay()
     root.opened = true
+    if (action === "cycle" || action === "cycleBack") {
+      // macOS-style transient mode: first Tab already moves off the
+      // current window, and releasing Super commits the highlight.
+      // Quick Super+Tab tap => index 1 => toggles to last focused.
+      if (root.rows.length > 1) {
+        root.selectedIndex = (action === "cycleBack") ? root.rows.length - 1 : 1
+      } else {
+        root.selectedIndex = 0
+      }
+      root.confirmOnSuperRelease = true
+      if (displayModel.count > 0) {
+        resultList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
+      }
+    } else {
+      // Persistent picker mode (toggle without Super): plain open +
+      // release keeps the overlay open for typing/arrows/Enter.
+      // A stale confirm flag must never leak into a fresh open.
+      root.confirmOnSuperRelease = false
+    }
     // Resolve addresses for focus; rows are ready now.
     clientsProc.running = true
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -92,6 +118,30 @@ Item {
 
   function ping() { return "ok" }
 
+  function touchMru(t) {
+    if (!t) return
+    // Rebuild instead of mutating: QML var arrays don't notify on
+    // in-place mutation, and a fresh array lets the old one get GC'd.
+    // Bounded by live window count (plus a hard cap), dead entries are
+    // dropped so closed windows are never retained.
+    var next = [t]
+    for (var i = 0; i < root.mruStack.length; i++) {
+      var e = root.mruStack[i]
+      if (e && e !== t) next.push(e)
+    }
+    // Prune dead toplevels (closed windows); cap length defensively.
+    var live = root.allToplevels || []
+    var pruned = []
+    for (var k = 0; k < next.length && pruned.length < 64; k++) {
+      var c = next[k]
+      if (!c) continue
+      try {
+        if (live.indexOf(c) !== -1) pruned.push(c)
+      } catch (err) { /* destroyed QObject: drop it */ }
+    }
+    root.mruStack = pruned
+  }
+
   function syncWindows() {
     var live = root.allToplevels || []
     var next = []
@@ -105,6 +155,22 @@ Item {
       if (live[i] && next.indexOf(live[i]) === -1) next.push(live[i])
     }
     root.knownWindows = next
+    // Keep MRU in step: prune dead, append brand-new windows as least
+    // recent (they have no focus history yet). Bounded by live count,
+    // so it can't grow across the session; old arrays get GC'd on
+    // reassignment.
+    var mru = []
+    for (i = 0; i < root.mruStack.length && mru.length < 64; i++) {
+      var me = root.mruStack[i]
+      if (!me) continue
+      try {
+        if (live.indexOf(me) !== -1) mru.push(me)
+      } catch (err) { /* destroyed QObject: drop it */ }
+    }
+    for (i = 0; i < live.length && mru.length < 64; i++) {
+      if (live[i] && mru.indexOf(live[i]) === -1) mru.push(live[i])
+    }
+    root.mruStack = mru
   }
 
   function isSpecial(t) {
@@ -148,23 +214,42 @@ Item {
 
   function rebuildDisplay() {
     var q = root.filterText.trim().toLowerCase()
-    var out = []
-    for (var i = 0; i < root.knownWindows.length; i++) {
-      var t = root.knownWindows[i]
+    // MRU order when unfiltered (mruStack[0] = current/active), so
+    // index 0 = current window, index 1 = last focused. Filtered
+    // searches keep MRU order too.
+    var ordered = []
+    var i, t
+    var useMru = root.mruStack && root.mruStack.length > 0
+    var src = useMru ? root.mruStack : root.knownWindows
+    for (i = 0; i < src.length; i++) {
+      t = src[i]
       if (!t || root.isSpecial(t)) continue
+      // Dedupe by object identity guard (QML var arrays hold refs).
+      var dup = false
+      for (var d = 0; d < ordered.length; d++) {
+        if (ordered[d] === t) { dup = true; break }
+      }
+      if (!dup) ordered.push(t)
+    }
+    // Append any known window missing from MRU (shouldn't happen after
+    // syncWindows, but guards a fresh session before first focus event).
+    for (i = 0; i < root.knownWindows.length; i++) {
+      t = root.knownWindows[i]
+      if (!t || root.isSpecial(t)) continue
+      var has = false
+      for (var h = 0; h < ordered.length; h++) {
+        if (ordered[h] === t) { has = true; break }
+      }
+      if (!has) ordered.push(t)
+    }
+    var out = []
+    for (i = 0; i < ordered.length; i++) {
+      t = ordered[i]
       if (q) {
         var hay = (root.appId(t) + " " + root.title(t)).toLowerCase()
         if (hay.indexOf(q) < 0) continue
       }
       out.push(t)
-    }
-    // Most recently focused first when unfiltered (active window on top).
-    if (!q && ToplevelManager.activeToplevel) {
-      var ai = out.indexOf(ToplevelManager.activeToplevel)
-      if (ai > 0) {
-        var act = out.splice(ai, 1)
-        out = act.concat(out)
-      }
     }
     root.rows = out
     if (root.selectedIndex >= out.length) root.selectedIndex = Math.max(0, out.length - 1)
@@ -246,7 +331,21 @@ Item {
     }
   }
 
-  Component.onCompleted: root.syncWindows()
+  Connections {
+    target: ToplevelManager
+    function onActiveToplevelChanged() {
+      root.touchMru(ToplevelManager.activeToplevel)
+    }
+  }
+
+  Component.onCompleted: {
+    root.syncWindows()
+    root.touchMru(ToplevelManager.activeToplevel)
+    // Seed MRU from Hyprland's focus history so the very first
+    // quick-switch after a shell restart already targets the last
+    // focused window (QML otherwise only learns recency incrementally).
+    mruSeedProc.running = true
+  }
 
   ListModel { id: displayModel }
 
@@ -307,6 +406,54 @@ Item {
     }
   }
 
+  // One-shot at startup: seed mruStack from Hyprland's focusHistoryID
+  // (0 = most recent). Matched by class/title like clientsProc; ambiguous
+  // duplicates keep live order. Never runs while open, so it can't
+  // reorder a switcher session in progress. Bounded + pruned like
+  // touchMru, so closed windows are never retained.
+  Process {
+    id: mruSeedProc
+    command: ["hyprctl", "clients", "-j"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try {
+          if (root.opened) return
+          var clients = JSON.parse(text)
+          var live = root.allToplevels || []
+          var used = {}
+          var scored = []
+          for (var i = 0; i < live.length; i++) {
+            var t = live[i]
+            if (!t || root.isSpecial(t)) continue
+            var cls = "", ttl = ""
+            try {
+              cls = String((t && t.appId) || "").trim()
+              ttl = String((t && t.title) || "")
+            } catch (e) { }
+            var best = -1, bestId = 1e9
+            for (var j = 0; j < clients.length; j++) {
+              if (used[j]) continue
+              var c = clients[j]
+              if (String(c["class"] || "").trim() !== cls) continue
+              if (String(c.title || "") !== ttl) continue
+              var fid = Number(c.focusHistoryID)
+              if (!(fid >= 0)) fid = 1e9
+              if (fid < bestId) { bestId = fid; best = j }
+            }
+            if (best >= 0) { used[best] = true; scored.push([bestId, t]) }
+            else scored.push([1e9, t])
+          }
+          scored.sort(function(a, b) { return a[0] - b[0] })
+          var ordered = []
+          for (var k = 0; k < scored.length && ordered.length < 64; k++) {
+            if (scored[k][1]) ordered.push(scored[k][1])
+          }
+          if (ordered.length > 0) root.mruStack = ordered
+        } catch (e) { }
+      }
+    }
+  }
+
   PointerMoveGate {
     id: pointerGate
     referenceItem: card
@@ -358,8 +505,10 @@ Item {
           } else if (event.key === Qt.Key_Tab) {
             // Only Super+Tab cycles (plain Tab is ignored); the Hypr
             // binding also summons a cycle, which the compositor consumes.
+            // Either path arms Super-release confirm (macOS behaviour).
             if (event.modifiers & Qt.MetaModifier) {
               root.select((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+              root.confirmOnSuperRelease = true
               event.accepted = true
             }
           } else if (event.key === Qt.Key_Up) {
@@ -387,8 +536,10 @@ Item {
           if (event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R
               || event.key === Qt.Key_Meta) {
             event.accepted = true
-            // Plain open + release keeps the overlay open; release after
-            // cycling applies the highlight. Esc/scrim dismisses.
+            // macOS-style: releasing Super always commits the highlight
+            // in transient (Super+Tab) mode. Persistent picker mode
+            // (toggle without Super) leaves confirm disarmed, so release
+            // keeps the overlay open. Esc/scrim dismisses.
             if (root.confirmOnSuperRelease) root.activateIndex(root.selectedIndex)
           }
         }

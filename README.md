@@ -36,9 +36,18 @@ Super+Tab binding (`~/.config/hypr/bindings.lua`):
 ```lua
 o.bind("SUPER + TAB", "All windows", "omarchy-shell shell summon wartafak.taskswitcher '{\"action\": \"cycle\"}'")
 o.bind("SUPER + SHIFT + TAB", "Previous window", "omarchy-shell shell summon wartafak.taskswitcher '{\"action\": \"cycleBack\"}'")
+o.bind("SUPER + SUPER_L", "Confirm window", "omarchy-shell shell summon wartafak.taskswitcher '{\"action\": \"confirm\"}'", { release = true })
+o.bind("SUPER + SUPER_R", "Confirm window", "omarchy-shell shell summon wartafak.taskswitcher '{\"action\": \"confirm\"}'", { release = true })
 ```
 
-Repeats cycle while open (macOS-style); `Esc` closes, `Enter`/click focuses.
+macOS-style: first `Super+Tab` already highlights the last focused window
+(MRU order, seeded from Hyprland's `focusHistoryID`), repeats cycle while
+`Super` is held, releasing `Super` focuses the highlight via the `confirm`
+release binding (the overlay's own `Super`-release handler is a fallback).
+Quick `Super+Tab` tap toggles between current and last window. `Esc` closes,
+`Enter`/click focuses. After editing QML or bindings, reload with
+`hyprctl reload` + `omarchy-restart-shell` — the running shell does not pick
+up plugin changes on its own.
 
 ## Files
 

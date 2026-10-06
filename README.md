@@ -1,6 +1,6 @@
 # WindowsWitcher — `wartafak.windowswitcher`
 
-Show and navigate currently open windows. Yes, the pun is intended — wind's howling.
+Show and navigate currently open windows. Yes, the pun is intended — the window's howling.
 
 Window tracking approach inspired by
 [rosakodu/omarchy-dock](https://github.com/rosakodu/omarchy-dock) (MIT).

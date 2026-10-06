@@ -81,23 +81,34 @@ var MRU_CAP = 64
 
 function mruTouch(stack, item, live, cap) {
   if (!item) return stack.slice()
-  cap = cap || MRU_CAP
-  var next = [item]
-  for (var i = 0; i < stack.length; i++) {
-    var e = stack[i]
-    if (e && e !== item) next.push(e)
+  // Fast path: already the head — skip rebuild + live scans on every
+  // re-focus of the same window. Dead-entry pruning is mruSync's job
+  // (runs on valuesChanged), so stragglers wait for the next sync.
+  if (stack.length > 0 && stack[0] === item) {
+    return stack.slice()
   }
-  var out = []
-  for (var k = 0; k < next.length && out.length < cap; k++) {
-    var c = next[k]
-    if (!c) continue
-    var alive = false
+  cap = cap || MRU_CAP
+  var liveSet = null
+  try {
+    liveSet = new Set(live)
+  } catch (err) {
+    liveSet = null
+  }
+  function alive(c) {
+    if (!c) return false
     try {
-      alive = live.indexOf(c) !== -1
+      return liveSet ? liveSet.has(c) : live.indexOf(c) !== -1
     } catch (err) {
-      alive = false
+      return false
     }
-    if (alive) out.push(c)
+  }
+  var out = [item].filter(alive)
+  // `next` is implicit: item first, then stack order minus item.
+  // Single pass, no intermediate `next` array.
+  for (var i = 0; i < stack.length && out.length < cap; i++) {
+    var e = stack[i]
+    if (!e || e === item) continue
+    if (alive(e)) out.push(e)
   }
   return out
 }
@@ -105,32 +116,79 @@ function mruTouch(stack, item, live, cap) {
 // Prune dead entries, append brand-new windows as least recent.
 function mruSync(stack, live, cap) {
   cap = cap || MRU_CAP
+  var liveSet = null, seen = null
+  try {
+    liveSet = new Set(live)
+    seen = new Set()
+  } catch (err) {
+    liveSet = null
+    seen = null
+  }
+  function alive(e) {
+    if (!e) return false
+    try {
+      return liveSet ? liveSet.has(e) : live.indexOf(e) !== -1
+    } catch (err) {
+      return false
+    }
+  }
   var out = []
   for (var i = 0; i < stack.length && out.length < cap; i++) {
     var e = stack[i]
-    if (!e) continue
-    var alive = false
-    try {
-      alive = live.indexOf(e) !== -1
-    } catch (err) {
-      alive = false
-    }
-    if (alive) out.push(e)
+    if (!e || !alive(e)) continue
+    if (seen) {
+      if (seen.has(e)) continue
+      seen.add(e)
+    } else if (out.indexOf(e) !== -1) continue
+    out.push(e)
   }
   for (var j = 0; j < live.length && out.length < cap; j++) {
-    if (live[j] && out.indexOf(live[j]) === -1) out.push(live[j])
+    var w = live[j]
+    if (!w) continue
+    if (seen) {
+      if (seen.has(w)) continue
+      seen.add(w)
+    } else if (out.indexOf(w) !== -1) continue
+    out.push(w)
   }
   return out
 }
 
 // Stable creation-order registry: keep survivors in order, append new.
 function syncKnown(known, live) {
+  var liveSet = null, seen = null
+  try {
+    liveSet = new Set(live)
+    seen = new Set()
+  } catch (err) {
+    liveSet = null
+    seen = null
+  }
   var next = []
   for (var i = 0; i < known.length; i++) {
-    if (live.indexOf(known[i]) !== -1) next.push(known[i])
+    var k = known[i]
+    if (!k) continue
+    var keep = false
+    try {
+      keep = liveSet ? liveSet.has(k) : live.indexOf(k) !== -1
+    } catch (err) {
+      keep = false
+    }
+    if (!keep) continue
+    if (seen) {
+      if (seen.has(k)) continue
+      seen.add(k)
+    } else if (next.indexOf(k) !== -1) continue
+    next.push(k)
   }
   for (var j = 0; j < live.length; j++) {
-    if (live[j] && next.indexOf(live[j]) === -1) next.push(live[j])
+    var w = live[j]
+    if (!w) continue
+    if (seen) {
+      if (seen.has(w)) continue
+      seen.add(w)
+    } else if (next.indexOf(w) !== -1) continue
+    next.push(w)
   }
   return next
 }
@@ -145,6 +203,12 @@ function syncKnown(known, live) {
 
 function orderRows(mruStack, knownWindows, skipFn) {
   var ordered = []
+  var seen = null
+  try {
+    seen = new Set()
+  } catch (e) {
+    seen = null
+  }
   var src = (mruStack && mruStack.length > 0) ? mruStack : knownWindows
   function pushUnique(t) {
     if (!t) return
@@ -155,8 +219,13 @@ function orderRows(mruStack, knownWindows, skipFn) {
       skip = true
     }
     if (skip) return
-    for (var d = 0; d < ordered.length; d++) {
-      if (ordered[d] === t) return
+    if (seen) {
+      if (seen.has(t)) return
+      seen.add(t)
+    } else {
+      for (var d = 0; d < ordered.length; d++) {
+        if (ordered[d] === t) return
+      }
     }
     ordered.push(t)
   }
@@ -193,6 +262,11 @@ function filterRows(ordered, query, hayFn) {
 // ---------------------------------------------------------------------------
 
 function matchRowAddrs(rows, clients) {
+  // Straight two-pass scan (exact incl. workspace, then class+title).
+  // Rows are <= 64 and clients <= a few hundred, and this runs only on
+  // hyprctl output -- a bucket index measured slower at these sizes
+  // (build cost dominates), so the simple loop stays.
+  // First unmatched client wins, so duplicates resolve deterministically.
   var used = {}
   var addrs = []
   var wsNames = []

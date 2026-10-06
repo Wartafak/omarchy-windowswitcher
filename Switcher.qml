@@ -34,6 +34,17 @@ Item {
   // Workspace names parallel to rows (hyprctl is authoritative; QML names
   // may be empty).
   property var rowWs: []
+  // Icon lookup cache keyed by lowercase appId: Quickshell.iconPath()
+  // hits the icon theme per call, but icons never change per window, so
+  // resolve once and reuse across rebuilds/keystrokes. Bounded by the
+  // number of distinct apps (tiny); plain strings only, no Toplevel refs.
+  property var iconCache: ({})
+  // Hoisted alias table (was allocated per iconFor call).
+  readonly property var iconAliases: ({
+    "ghostty": "com.mitchellh.ghostty",
+    "vscode": "code",
+    "code - oss": "code"
+  })
 
   property color background: Color.menu.background
   property color foreground: Color.menu.text
@@ -147,19 +158,35 @@ Item {
 
   function touchMru(t) {
     if (!t) return
+    // Fast path: already the head — skip the Logic round-trip, prune and
+    // array churn on every re-focus of the same window. Dead-entry pruning
+    // is syncWindows()/mruSync's job (runs on valuesChanged).
+    if (root.mruStack.length > 0 && root.mruStack[0] === t) return
     // Rebuilt (not mutated: QML var arrays don't notify on in-place
     // mutation), pruned and bounded via the shared logic library so old
     // arrays get GC'd and closed windows are never retained.
     root.mruStack = Logic.mruTouch(root.mruStack, t, root.allToplevels || [], 64)
   }
 
+  function sameWindows(a, b) {
+    if (!a || !b || a.length !== b.length) return false
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return false
+    }
+    return true
+  }
+
   function syncWindows() {
     var live = root.allToplevels || []
-    root.knownWindows = Logic.syncKnown(root.knownWindows, live)
+    var nextKnown = Logic.syncKnown(root.knownWindows, live)
+    // Guard: var-array assignment always notifies, even for identical
+    // content — skip it when nothing changed to avoid downstream churn.
+    if (!root.sameWindows(root.knownWindows, nextKnown)) root.knownWindows = nextKnown
     // Keep MRU in step: prune dead, append brand-new windows as least
     // recent (they have no focus history yet). Bounded by live count,
     // so it can't grow across the session.
-    root.mruStack = Logic.mruSync(root.mruStack, live, 64)
+    var nextMru = Logic.mruSync(root.mruStack, live, 64)
+    if (!root.sameWindows(root.mruStack, nextMru)) root.mruStack = nextMru
   }
 
   function isSpecial(t) {
@@ -188,17 +215,28 @@ Item {
     var raw = root.appId(t)
     if (!raw) return Quickshell.iconPath("application-x-executable", true) || ""
     var low = raw.toLowerCase()
-    var alias = {
-      "ghostty": "com.mitchellh.ghostty",
-      "vscode": "code",
-      "code - oss": "code"
-    }
+    var hit = root.iconCache[low]
+    if (hit !== undefined) return hit
+    var alias = root.iconAliases
     var names = alias[low] ? [alias[low], raw, low] : [raw, low]
     for (var i = 0; i < names.length; i++) {
       var p = Quickshell.iconPath(names[i], true)
-      if (p && p.length > 0 && p.indexOf("application-x-executable") === -1) return p
+      if (p && p.length > 0 && p.indexOf("application-x-executable") === -1) {
+        // Copy-on-write: QML var objects don't notify on in-place
+        // mutation, so reassign to persist (single notify per new app).
+        var next = {}
+        for (var k in root.iconCache) next[k] = root.iconCache[k]
+        next[low] = p
+        root.iconCache = next
+        return p
+      }
     }
-    return Quickshell.iconPath("application-x-executable", true) || ""
+    var fb = Quickshell.iconPath("application-x-executable", true) || ""
+    var nextFb = {}
+    for (var k2 in root.iconCache) nextFb[k2] = root.iconCache[k2]
+    nextFb[low] = fb
+    root.iconCache = nextFb
+    return fb
   }
 
   function rebuildDisplay() {
@@ -208,18 +246,36 @@ Item {
     // searches keep MRU order too. Ordering/filtering/clamping live in
     // the shared logic library (unit-tested); the closures below are the
     // only place that touches live QObjects.
+    // Per-rebuild memo: appId/title/wsName extracted ONCE per window and
+    // shared by the filter haystack and the model rows below (previously
+    // each was recomputed 2-3x per row per keystroke).
+    var memo = null
+    try { memo = new Map() } catch (e) { memo = null }
+    function entry(t) {
+      if (memo) {
+        var hit = memo.get(t)
+        if (hit !== undefined) return hit
+      }
+      var a = root.appId(t)
+      var b = root.title(t)
+      var w = root.wsName(t)
+      var e2 = { app: a, ttl: b, ws: w, hay: (a + " " + b).toLowerCase() }
+      if (memo) memo.set(t, e2)
+      return e2
+    }
     function skipFn(t) { return root.isSpecial(t) }
-    function hayFn(t) { return root.appId(t) + " " + root.title(t) }
+    function hayFn(t) { return entry(t).hay }
     var ordered = Logic.orderRows(root.mruStack, root.knownWindows, skipFn)
     var out = Logic.filterRows(ordered, q, hayFn)
     root.rows = out
     root.selectedIndex = Logic.clampIndex(root.selectedIndex, out.length)
     displayModel.clear()
     for (var k = 0; k < out.length; k++) {
+      var e = entry(out[k])
       displayModel.append({
-        label: root.appId(out[k]) || "window",
-        detail: root.title(out[k]),
-        ws: root.wsName(out[k]),
+        label: e.app || "window",
+        detail: e.ttl,
+        ws: e.ws,
         icon: root.iconFor(out[k])
       })
     }

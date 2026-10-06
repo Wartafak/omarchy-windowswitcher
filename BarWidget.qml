@@ -28,6 +28,14 @@ BarWidget {
     // kept tripping QML's loop detector via the registry writes).
     property var windows: []
     property bool _refreshing: false
+    // Icon lookup cache keyed by lowercase appId (see Switcher.qml):
+    // iconPath() hits the theme per call; icons never change per app.
+    property var iconCache: ({})
+    readonly property var iconAliases: ({
+        "ghostty": "com.mitchellh.ghostty",
+        "vscode": "code",
+        "code - oss": "code"
+    })
     onFocusedWsChanged: refresh()
     onShowAllChanged: refresh()
     property bool _ready: false
@@ -38,15 +46,32 @@ BarWidget {
     function syncWindows() {
         if (!root._ready) return
         var live = root.allToplevels || []
+        // Set-based membership: was O(known × live) nested loop plus
+        // O(n) indexOf scans. Falls back to indexOf where Set is missing.
+        var liveSet = null, seen = null
+        try { liveSet = new Set(live); seen = new Set() } catch (e) { liveSet = null; seen = null }
+        function isLive(k) {
+            if (!k) return false
+            try { return liveSet ? liveSet.has(k) : live.indexOf(k) !== -1 }
+            catch (e) { return false }
+        }
+        function seenHas(x) {
+            try { return seen ? seen.has(x) : false } catch (e) { return false }
+        }
+        function seenAdd(x) {
+            try { if (seen) seen.add(x) } catch (e) {}
+        }
         var next = []
         for (var i = 0; i < root.knownWindows.length; i++) {
             var k = root.knownWindows[i]
-            for (var j = 0; j < live.length; j++) {
-                if (live[j] === k) { next.push(k); break }
-            }
+            if (!k || !isLive(k) || seenHas(k)) continue
+            seenAdd(k)
+            next.push(k)
         }
         for (var l = 0; l < live.length; l++) {
-            if (live[l] && next.indexOf(live[l]) === -1) next.push(live[l])
+            if (!live[l] || seenHas(live[l])) continue
+            seenAdd(live[l])
+            next.push(live[l])
         }
         var same = next.length === root.knownWindows.length
         if (same) {
@@ -118,17 +143,26 @@ BarWidget {
         var raw = appId(t)
         if (!raw) return Quickshell.iconPath("application-x-executable", true) || ""
         var low = raw.toLowerCase()
-        var alias = {
-            "ghostty": "com.mitchellh.ghostty",
-            "vscode": "code",
-            "code - oss": "code"
-        }
+        var hit = root.iconCache[low]
+        if (hit !== undefined) return hit
+        var alias = root.iconAliases
         var names = alias[low] ? [alias[low], raw, low] : [raw, low]
         for (var i = 0; i < names.length; i++) {
             var p = Quickshell.iconPath(names[i], true)
-            if (p && p.length > 0 && p.indexOf("application-x-executable") === -1) return p
+            if (p && p.length > 0 && p.indexOf("application-x-executable") === -1) {
+                var next = {}
+                for (var k in root.iconCache) next[k] = root.iconCache[k]
+                next[low] = p
+                root.iconCache = next
+                return p
+            }
         }
-        return Quickshell.iconPath("application-x-executable", true) || ""
+        var fb = Quickshell.iconPath("application-x-executable", true) || ""
+        var nextFb = {}
+        for (var k2 in root.iconCache) nextFb[k2] = root.iconCache[k2]
+        nextFb[low] = fb
+        root.iconCache = nextFb
+        return fb
     }
 
     Connections {

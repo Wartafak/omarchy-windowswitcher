@@ -47,23 +47,6 @@ Under the hood:
 - `./tests/integration.sh`: live end-to-end test via shell IPC + `hyprctl`
 - `isOpen` / `debugState` IPC accessors for scripting and diagnosis
 
-## Two views, one purpose
-
-- **Persistent (top bar):** `BarWidget.qml` — little icons for open windows. Click to focus, middle/right-click to close. No overlay, no layout disturbance.
-- **On-demand (Super+Tab):** `Switcher.qml` overlay — native Quickshell picker with real app icons, live list via `ToplevelManager`, Tab/Shift+Tab + arrows + type-to-filter, Enter to focus. Summoned with `omarchy-shell shell toggle wartafak.windowswitcher`.
-
-## Behavior (bar)
-
-- Lives in the top bar left section, after workspaces:
-  `omarchy.menu, omarchy.workspaces, wartafak.windowswitcher`
-- One icon per normal window (special workspaces excluded)
-- Active window highlighted with `Color.accent`, others get a small dot
-- Left-click focuses, middle/right-click closes, hover shows title tooltip
-- Hidden when no windows (`visible: false`, zero width)
-- `showAllWorkspaces: true` by default (Windows-like); set false in the
-  layout entry to show only the focused workspace:
-  `{ "id": "wartafak.windowswitcher", "showAllWorkspaces": false }`
-
 ## Commands
 
 ```bash

@@ -1,4 +1,4 @@
-// BarWidget.qml — wartafak.taskswitcher (TasksWitcher) v1.0.0
+// BarWidget.qml — wartafak.windowswitcher (WindowsWitcher) v1.0.0
 // Top-bar taskbar: little icons for open windows, no overlay, no layout disturbance.
 // Window source + icon approach inspired by rosakodu/omarchy-dock (MIT):
 // ToplevelManager.toplevels, toplevel.activate()/close(), Quickshell.iconPath lookup.
@@ -13,9 +13,9 @@ import qs.Ui
 
 BarWidget {
     id: root
-    moduleName: "wartafak.taskswitcher"
+    moduleName: "wartafak.windowswitcher"
 
-    // shell.json per-widget override: { "id": "wartafak.taskswitcher", "showAllWorkspaces": false }
+    // shell.json per-widget override: { "id": "wartafak.windowswitcher", "showAllWorkspaces": false }
     readonly property bool showAll: setting("showAllWorkspaces", true) !== false
     readonly property int iconPx: Math.max(14, Math.min(24, Math.round(barSize * 0.52)))
 

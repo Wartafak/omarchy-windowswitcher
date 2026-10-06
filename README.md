@@ -1,4 +1,4 @@
-# TasksWitcher — `wartafak.taskswitcher`
+# WindowsWitcher — `wartafak.windowswitcher`
 
 Show and navigate currently open windows. Yes, the pun is intended — toss a Window to your switcher.
 
@@ -10,34 +10,34 @@ Window tracking approach inspired by
 ## Two views, one purpose
 
 - **Persistent (top bar):** `BarWidget.qml` — little icons for open windows. Click to focus, middle/right-click to close. No overlay, no layout disturbance.
-- **On-demand (Super+Tab):** `Switcher.qml` overlay — native Quickshell picker with real app icons, live list via `ToplevelManager`, Tab/Shift+Tab + arrows + type-to-filter, Enter to focus. Summoned with `omarchy-shell shell toggle wartafak.taskswitcher`.
+- **On-demand (Super+Tab):** `Switcher.qml` overlay — native Quickshell picker with real app icons, live list via `ToplevelManager`, Tab/Shift+Tab + arrows + type-to-filter, Enter to focus. Summoned with `omarchy-shell shell toggle wartafak.windowswitcher`.
 
 ## Behavior (bar)
 
 - Lives in the top bar left section, after workspaces:
-  `omarchy.menu, omarchy.workspaces, wartafak.taskswitcher`
+  `omarchy.menu, omarchy.workspaces, wartafak.windowswitcher`
 - One icon per normal window (special workspaces excluded)
 - Active window highlighted with `Color.accent`, others get a small dot
 - Left-click focuses, middle/right-click closes, hover shows title tooltip
 - Hidden when no windows (`visible: false`, zero width)
 - `showAllWorkspaces: true` by default (Windows-like); set false in the
   layout entry to show only the focused workspace:
-  `{ "id": "wartafak.taskswitcher", "showAllWorkspaces": false }`
+  `{ "id": "wartafak.windowswitcher", "showAllWorkspaces": false }`
 
 ## Commands
 
 ```bash
-omarchy plugin validate ~/.config/omarchy/plugins/wartafak.taskswitcher
-omarchy bar put wartafak.taskswitcher --section left --after omarchy.workspaces
+omarchy plugin validate ~/.config/omarchy/plugins/wartafak.windowswitcher
+omarchy bar put wartafak.windowswitcher --section left --after omarchy.workspaces
 ```
 
 Super+Tab binding (`~/.config/hypr/bindings.lua`):
 
 ```lua
-o.bind("SUPER + TAB", "All windows", "omarchy-shell shell summon wartafak.taskswitcher '{\"action\": \"cycle\"}'")
-o.bind("SUPER + SHIFT + TAB", "Previous window", "omarchy-shell shell summon wartafak.taskswitcher '{\"action\": \"cycleBack\"}'")
-o.bind("SUPER + SUPER_L", "Confirm window", "omarchy-shell shell summon wartafak.taskswitcher '{\"action\": \"confirm\"}'", { release = true })
-o.bind("SUPER + SUPER_R", "Confirm window", "omarchy-shell shell summon wartafak.taskswitcher '{\"action\": \"confirm\"}'", { release = true })
+o.bind("SUPER + TAB", "All windows", "omarchy-shell shell summon wartafak.windowswitcher '{\"action\": \"cycle\"}'")
+o.bind("SUPER + SHIFT + TAB", "Previous window", "omarchy-shell shell summon wartafak.windowswitcher '{\"action\": \"cycleBack\"}'")
+o.bind("SUPER + SUPER_L", "Confirm window", "omarchy-shell shell summon wartafak.windowswitcher '{\"action\": \"confirm\"}'", { release = true })
+o.bind("SUPER + SUPER_R", "Confirm window", "omarchy-shell shell summon wartafak.windowswitcher '{\"action\": \"confirm\"}'", { release = true })
 ```
 
 macOS-style: first `Super+Tab` already highlights the last focused window
@@ -51,7 +51,7 @@ up plugin changes on its own.
 
 ## Files
 
-- `manifest.json` — id `wartafak.taskswitcher`, kinds `bar-widget` + `overlay`
+- `manifest.json` — id `wartafak.windowswitcher`, kinds `bar-widget` + `overlay`
 - `BarWidget.qml` — icon strip (BarWidget base, RowLayout + Repeater)
 - `Switcher.qml` — Super+Tab overlay (PanelWindow, live ToplevelManager list)
 

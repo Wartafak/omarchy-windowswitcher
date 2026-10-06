@@ -1,4 +1,4 @@
-// Switcher.qml — wartafak.taskswitcher (TasksWitcher) overlay
+// Switcher.qml — wartafak.windowswitcher (WindowsWitcher) overlay
 // Quickshell-native Super+Tab window switcher: real app icons, live list,
 // in-process activation (no hyprctl). switcher.py stays as fallback.
 
@@ -464,7 +464,7 @@ Item {
     visible: root.opened
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
-    WlrLayershell.namespace: "wartafak-taskswitcher"
+    WlrLayershell.namespace: "wartafak-windowswitcher"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
     exclusionMode: ExclusionMode.Ignore

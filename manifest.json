@@ -18,7 +18,7 @@
   "barWidget": {
     "displayName": "WindowsWitcher",
     "description": "Open-window icons in the top bar + Super+Tab switcher",
-    "category": "System",
+    "category": "Desktop",
     "allowMultiple": false,
     "defaultSection": "left"
   }

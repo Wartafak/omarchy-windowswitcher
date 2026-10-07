@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "wartafak.windowswitcher",
   "name": "WindowsWitcher",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": "Wartafak",
   "license": "MIT",
   "description": "Show and navigate currently open windows. Persistent top-bar icon strip plus Super+Tab switcher. Witcher-inspired window switcher.",

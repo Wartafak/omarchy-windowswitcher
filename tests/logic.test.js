@@ -153,17 +153,6 @@ describe("orderRows", () => {
   })
 })
 
-describe("filterRows", () => {
-  const hay = (t) => t.toLowerCase()
-  it("passes everything through on empty query", () => {
-    assert.deepEqual(L.filterRows(["a", "b"], "  ", hay), ["a", "b"])
-  })
-  it("matches case-insensitively", () => {
-    assert.deepEqual(L.filterRows(["Foot Terminal", "Brave"], "foot", hay), ["Foot Terminal"])
-    assert.deepEqual(L.filterRows(["Foot Terminal", "Brave"], "E", hay), ["Foot Terminal", "Brave"])
-  })
-})
-
 describe("matchRowAddrs", () => {
   const clients = [
     { cls: "foot", title: "one", ws: "1", wsLabel: "1", address: "0x1" },

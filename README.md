@@ -31,12 +31,17 @@ Switcher overlay (`Switcher.qml`, `Super+Tab`):
 - Releasing `Super` focuses the highlighted window (compositor-level
   release binding, with an in-overlay fallback)
 - `Up`/`Down` move the selection; selection also commits on `Super` release
-- Type-to-filter, `Enter`/click to focus, `Esc` (or scrim click) to dismiss
+- Click to focus, `Esc` (or scrim click) to dismiss
+- Human-friendly app names from desktop entries (`dev.zed.Zed` → `Zed`,
+  `brave-origin` → `Brave Origin`); raw app id shows when none resolves
+- Shortcut hints footer (`Tab: cycle` · `↑↓: navigate` ·
+  `Release Super: select`)
 - MRU ordering seeded from Hyprland's `focusHistoryID`, then tracked live
-- Workspace badges resolved authoritatively via `hyprctl`
+- Workspace badges resolved authoritatively via `hyprctl`, shown as subtle
+  filled chips
 - Focus applied in-process plus `hyprctl` address fallback
 - Persistent picker mode when summoned without `Super` (stays open for
-  typing/arrows/`Enter`)
+  arrows/click)
 - Context-aware `Super+Up/Down` (see `bindings.lua`): selection while open,
   directional window focus otherwise
 
@@ -68,7 +73,7 @@ macOS-style: first `Super+Tab` already highlights the last focused window
 `Super` is held, releasing `Super` focuses the highlight via the `confirm`
 release binding (the overlay's own `Super`-release handler is a fallback).
 Quick `Super+Tab` tap toggles between current and last window. `Esc` closes,
-`Enter`/click focuses.
+click focuses.
 
 `Super+Up/Down` is context-aware: while the switcher is open it moves the
 selection (`cycleBack`/`cycle`), otherwise it keeps Hyprland's directional
@@ -120,7 +125,7 @@ test. QML keeps only thin adapters plus live-QObject field extraction
 
 ```bash
 omarchy plugin validate ~/.config/omarchy/plugins/wartafak.windowswitcher
-node --test tests/   # 36 unit tests, no runner to install
+node --test tests/   # 34 unit tests, no runner to install
 ./tests/integration.sh  # live: needs the shell + >= 2 windows, net-zero focus change
 ```
 

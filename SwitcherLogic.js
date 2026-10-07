@@ -194,11 +194,10 @@ function syncKnown(known, live) {
 }
 
 // ---------------------------------------------------------------------------
-// Row ordering + filtering
+// Row ordering
 //
-// skipFn(t) -> true when t must be excluded (QML passes isSpecial).
-// hayFn(t) -> lowercase "appId title" haystack (QML extracts QObject
-// fields so the library never touches live QObjects).
+// skipFn(t) -> true when t must be excluded (QML passes isSpecial, so the
+// library never touches live QObjects).
 // ---------------------------------------------------------------------------
 
 function orderRows(mruStack, knownWindows, skipFn) {
@@ -232,22 +231,6 @@ function orderRows(mruStack, knownWindows, skipFn) {
   for (var i = 0; i < src.length; i++) pushUnique(src[i])
   for (var k = 0; k < knownWindows.length; k++) pushUnique(knownWindows[k])
   return ordered
-}
-
-function filterRows(ordered, query, hayFn) {
-  var q = String(query || "").trim().toLowerCase()
-  if (!q) return ordered.slice()
-  var out = []
-  for (var i = 0; i < ordered.length; i++) {
-    var hay = ""
-    try {
-      hay = String(hayFn(ordered[i]) || "")
-    } catch (e) {
-      hay = ""
-    }
-    if (hay.toLowerCase().indexOf(q) !== -1) out.push(ordered[i])
-  }
-  return out
 }
 
 // ---------------------------------------------------------------------------
@@ -340,7 +323,6 @@ if (typeof module !== "undefined" && module.exports) {
     mruSync: mruSync,
     syncKnown: syncKnown,
     orderRows: orderRows,
-    filterRows: filterRows,
     matchRowAddrs: matchRowAddrs,
     seedOrder: seedOrder
   }

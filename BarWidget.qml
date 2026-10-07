@@ -1,4 +1,4 @@
-// BarWidget.qml — wartafak.windowswitcher (WindowsWitcher) v1.2.0
+// BarWidget.qml — wartafak.windowswitcher (WindowsWitcher) v1.3.0
 // Top-bar taskbar: little icons for open windows, no overlay, no layout disturbance.
 // Window source + icon approach inspired by rosakodu/omarchy-dock (MIT):
 // ToplevelManager.toplevels, toplevel.activate()/close(), Quickshell.iconPath lookup.
@@ -145,24 +145,32 @@ BarWidget {
         var low = raw.toLowerCase()
         var hit = root.iconCache[low]
         if (hit !== undefined) return hit
+        function store(p) {
+            var next = {}
+            for (var k in root.iconCache) next[k] = root.iconCache[k]
+            next[low] = p
+            root.iconCache = next
+            return p
+        }
+        // The .desktop entry's Icon= first: the appId is often reverse-DNS
+        // (`dev.zed.Zed`) while Icon= is the theme name (`zed`). This is
+        // what the app menu resolves, so we match it. Then the appId guesses.
+        try {
+            var de = DesktopEntries.heuristicLookup(raw)
+            if (de && de.icon) {
+                var dein = String(de.icon)
+                if (dein.charAt(0) === "/") return store(Util.fileUrl(dein))
+                var p0 = Quickshell.iconPath(dein, true)
+                if (p0 && p0.length > 0 && p0.indexOf("application-x-executable") === -1) return store(p0)
+            }
+        } catch (e) {}
         var alias = root.iconAliases
         var names = alias[low] ? [alias[low], raw, low] : [raw, low]
         for (var i = 0; i < names.length; i++) {
             var p = Quickshell.iconPath(names[i], true)
-            if (p && p.length > 0 && p.indexOf("application-x-executable") === -1) {
-                var next = {}
-                for (var k in root.iconCache) next[k] = root.iconCache[k]
-                next[low] = p
-                root.iconCache = next
-                return p
-            }
+            if (p && p.length > 0 && p.indexOf("application-x-executable") === -1) return store(p)
         }
-        var fb = Quickshell.iconPath("application-x-executable", true) || ""
-        var nextFb = {}
-        for (var k2 in root.iconCache) nextFb[k2] = root.iconCache[k2]
-        nextFb[low] = fb
-        root.iconCache = nextFb
-        return fb
+        return store(Quickshell.iconPath("application-x-executable", true) || "")
     }
 
     Connections {

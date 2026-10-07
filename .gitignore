@@ -1,2 +1,4 @@
 __pycache__/
 *.pyc
+# Local-only agent instructions: AGENTS.md at the plugin root interferes with omarchy's automated validation
+AGENTS.md

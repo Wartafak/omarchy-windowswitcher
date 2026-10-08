@@ -32,12 +32,6 @@ Switcher overlay (`Switcher.qml`, `Super+Tab`):
 - Click to focus, `Esc` to dismiss
 - Windows listed most-recently-focused first
 
-Under the hood:
-
-- Shared `SwitcherLogic.js`: all decisions as pure, unit-tested functions
-  (`node --test tests/`, no dependencies)
-- `./tests/integration.sh`: live end-to-end test via shell IPC + `hyprctl`
-- `isOpen` / `debugState` IPC accessors for scripting and diagnosis
 
 ## Install
 

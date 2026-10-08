@@ -16,38 +16,21 @@ Top-bar icon strip and the `Super+Tab` switcher:
 
 Top bar (`BarWidget.qml`):
 
-- One icon per open window, with real app icons (same lookup as the switcher),
-  sized to fill the highlight
-- Icons grouped by workspace (workspace 1 first), creation order within a workspace
-  (workspaces resolved via `hyprctl`, like the switcher badges)
-- Active window highlighted with `Color.accent`
-- Left-click focuses, middle/right-click closes, hover shows a `[workspace] title` tooltip
+- One icon per open window
+- Icons grouped by workspace (workspace 1 first)
+- Active window highlighted
+- Left-click focuses, middle/right-click closes, hover shows the workspace tooltip
 - Hides itself when there are no windows (zero width, no layout disturbance)
-- `showAllWorkspaces: true` by default (Windows-like); set `false` in the
-  layout entry to show only the focused workspace
 - Special workspaces (e.g. scratchpad) are excluded
 
 Switcher overlay (`Switcher.qml`, `Super+Tab`):
 
 - Quick tap toggles between the current and the last focused window
 - Hold `Super` and press `Tab` / `Shift+Tab` to cycle through windows
-- Releasing `Super` focuses the highlighted window (compositor-level
-  release binding, with an in-overlay fallback)
+- Releasing `Super` focuses the highlighted window
 - `Up`/`Down` move the selection; selection also commits on `Super` release
-- Click to focus, `Esc` (or scrim click) to dismiss
-- Human-friendly app names from desktop entries (`dev.zed.Zed` → `Zed`,
-  `brave-origin` → `Brave Origin`); raw app id shows when none resolves
-- Shortcut hints footer (`Tab: cycle` · `↑↓: navigate` ·
-  `Release Super: select`)
-- Windows listed most-recently-focused first (MRU order, seeded from
-  Hyprland's `focusHistoryID`, then tracked live)
-- Workspace badges resolved authoritatively via `hyprctl`, shown as subtle
-  filled chips
-- Focus applied in-process plus `hyprctl` address fallback
-- Persistent picker mode when summoned without `Super` (stays open for
-  arrows/click)
-- Context-aware `Super+Up/Down` (see `bindings.lua`): selection while open,
-  directional window focus otherwise
+- Click to focus, `Esc` to dismiss
+- Windows listed most-recently-focused first
 
 Under the hood:
 

@@ -16,9 +16,12 @@ Top-bar icon strip and the `Super+Tab` switcher:
 
 Top bar (`BarWidget.qml`):
 
-- One icon per open window, with real app icons (same lookup as the switcher)
-- Active window highlighted with `Color.accent`, the rest get a running dot
-- Left-click focuses, middle/right-click closes, hover shows a title tooltip
+- One icon per open window, with real app icons (same lookup as the switcher),
+  sized to fill the highlight
+- Icons grouped by workspace (workspace 1 first), creation order within a workspace
+  (workspaces resolved via `hyprctl`, like the switcher badges)
+- Active window highlighted with `Color.accent`
+- Left-click focuses, middle/right-click closes, hover shows a `[workspace] title` tooltip
 - Hides itself when there are no windows (zero width, no layout disturbance)
 - `showAllWorkspaces: true` by default (Windows-like); set `false` in the
   layout entry to show only the focused workspace
@@ -36,7 +39,8 @@ Switcher overlay (`Switcher.qml`, `Super+Tab`):
   `brave-origin` → `Brave Origin`); raw app id shows when none resolves
 - Shortcut hints footer (`Tab: cycle` · `↑↓: navigate` ·
   `Release Super: select`)
-- MRU ordering seeded from Hyprland's `focusHistoryID`, then tracked live
+- Windows listed most-recently-focused first (MRU order, seeded from
+  Hyprland's `focusHistoryID`, then tracked live)
 - Workspace badges resolved authoritatively via `hyprctl`, shown as subtle
   filled chips
 - Focus applied in-process plus `hyprctl` address fallback
@@ -125,7 +129,7 @@ test. QML keeps only thin adapters plus live-QObject field extraction
 
 ```bash
 omarchy plugin validate ~/.config/omarchy/plugins/wartafak.windowswitcher
-node --test tests/   # 34 unit tests, no runner to install
+node --test tests/   # 43 unit tests, no runner to install
 ./tests/integration.sh  # live: needs the shell + >= 2 windows, net-zero focus change
 ```
 

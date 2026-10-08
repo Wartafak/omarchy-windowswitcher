@@ -140,6 +140,11 @@ describe("orderRows", () => {
     const known = ["a", "b", "c"]
     assert.deepEqual(L.orderRows(mru, known, skipSpecial), ["b", "a", "c"])
   })
+  it("lists most-recently-focused windows first", () => {
+    // MRU head = active window; recency order is the display order.
+    const mru = ["current", "last", "older"]
+    assert.deepEqual(L.orderRows(mru, ["older", "last", "current"], () => false), ["current", "last", "older"])
+  })
   it("falls back to creation order when MRU is empty", () => {
     assert.deepEqual(L.orderRows([], ["a", "b"], skipSpecial), ["a", "b"])
   })
@@ -150,6 +155,61 @@ describe("orderRows", () => {
       L.orderRows(mru, known, (t) => t === "s"),
       ["a"]
     )
+  })
+})
+
+describe("wsOrderValue / orderBarEntries", () => {
+  it("prefers the numeric workspace id", () => {
+    assert.equal(L.wsOrderValue(2, "2"), 2)
+    assert.equal(L.wsOrderValue("10", "x"), 10)
+  })
+  it("parses numeric workspace names when the id is missing", () => {
+    assert.equal(L.wsOrderValue(undefined, "3"), 3)
+    assert.equal(L.wsOrderValue(null, "3"), 3)
+  })
+  it("sorts named workspaces last", () => {
+    assert.equal(L.wsOrderValue(undefined, "web") > 1000, true)
+    assert.ok(L.wsOrderValue(99, "99") < L.wsOrderValue(undefined, "web"))
+  })
+  it("orders bar entries by workspace, stable within a workspace", () => {
+    const entries = [
+      { id: "b-ws2", wsId: 2, wsName: "2", pos: 0 },
+      { id: "a-ws1-second", wsId: 1, wsName: "1", pos: 2 },
+      { id: "c-ws1-first", wsId: 1, wsName: "1", pos: 1 },
+      { id: "d-named", wsId: undefined, wsName: "web", pos: 3 }
+    ]
+    const out = L.orderBarEntries(entries).map((e) => e.id)
+    assert.deepEqual(out, ["c-ws1-first", "a-ws1-second", "b-ws2", "d-named"])
+  })
+  it("does not mutate the input array", () => {
+    const entries = [
+      { id: "b", wsId: 2, wsName: "2", pos: 0 },
+      { id: "a", wsId: 1, wsName: "1", pos: 1 }
+    ]
+    L.orderBarEntries(entries)
+    assert.deepEqual(entries.map((e) => e.id), ["b", "a"])
+  })
+})
+
+describe("pickBarWs", () => {
+  it("prefers the hyprctl-resolved workspace name", () => {
+    assert.deepEqual(L.pickBarWs("2", 9, "9"), { wsId: undefined, wsName: "2" })
+  })
+  it("falls back to the QML id/name pair when unresolved", () => {
+    assert.deepEqual(L.pickBarWs("", 9, "9"), { wsId: 9, wsName: "9" })
+    assert.deepEqual(L.pickBarWs(null, undefined, ""), { wsId: undefined, wsName: "" })
+  })
+  it("sorts by the authoritative name when QML fields are empty", () => {
+    const rows = [
+      { wsId: undefined, wsName: "", pos: 0 },
+      { wsId: undefined, wsName: "", pos: 1 }
+    ]
+    const picked = [
+      L.pickBarWs("3", rows[0].wsId, rows[0].wsName),
+      L.pickBarWs("2", rows[1].wsId, rows[1].wsName)
+    ]
+    const entries = picked.map((p, i) => ({ wsId: p.wsId, wsName: p.wsName, pos: i }))
+    assert.deepEqual(L.orderBarEntries(entries).map((e) => e.pos), [1, 0])
   })
 })
 

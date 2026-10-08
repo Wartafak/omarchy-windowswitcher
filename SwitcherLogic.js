@@ -234,6 +234,49 @@ function orderRows(mruStack, knownWindows, skipFn) {
 }
 
 // ---------------------------------------------------------------------------
+// Bar ordering (workspace-first)
+//
+// BarWidget shows open windows grouped by workspace (workspace 1 first,
+// then 2, ...), preserving creation order within a workspace. QML extracts
+// plain {wsId, wsName, pos} per window (never live QObjects) and sorts via
+// orderBarEntries; wsOrderValue is the single rank key (numeric id wins,
+// numeric name parses, named workspaces sort last).
+// ---------------------------------------------------------------------------
+
+function wsOrderValue(wsId, wsName) {
+  if (wsId !== undefined && wsId !== null && wsId !== "") {
+    var id = Number(wsId)
+    if (isFinite(id)) return id
+  }
+  var n = parseInt(String(wsName || ""), 10)
+  if (isFinite(n)) return n
+  return 1e9
+}
+
+// entries: [{ wsId, wsName, pos, ... }]. Returns a new array sorted by
+// workspace rank, then original position (stable within a workspace).
+function orderBarEntries(entries) {
+  return (entries || []).slice().sort(function(a, b) {
+    var ra = wsOrderValue(a.wsId, a.wsName)
+    var rb = wsOrderValue(b.wsId, b.wsName)
+    if (ra !== rb) return ra - rb
+    var pa = (a.pos !== undefined && a.pos !== null) ? a.pos : 0
+    var pb = (b.pos !== undefined && b.pos !== null) ? b.pos : 0
+    return pa - pb
+  })
+}
+
+// Workspace source precedence for one bar entry: the hyprctl-resolved
+// name wins when present (QML Toplevel workspace fields can come through
+// empty); otherwise the QML id/name pair is used as-is.
+function pickBarWs(authName, wsId, wsName) {
+  if (authName && String(authName).length > 0) {
+    return { wsId: undefined, wsName: String(authName) }
+  }
+  return { wsId: wsId, wsName: wsName }
+}
+
+// ---------------------------------------------------------------------------
 // hyprctl client matching (plain-data in, plain-data out)
 //
 // clients: [{ cls, title, ws, wsLabel, address, fid }]
@@ -323,6 +366,9 @@ if (typeof module !== "undefined" && module.exports) {
     mruSync: mruSync,
     syncKnown: syncKnown,
     orderRows: orderRows,
+    wsOrderValue: wsOrderValue,
+    orderBarEntries: orderBarEntries,
+    pickBarWs: pickBarWs,
     matchRowAddrs: matchRowAddrs,
     seedOrder: seedOrder
   }

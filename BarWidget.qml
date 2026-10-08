@@ -1,4 +1,4 @@
-// BarWidget.qml — wartafak.windowswitcher (WindowsWitcher) v1.3.0
+// BarWidget.qml — wartafak.windowswitcher (WindowsWitcher) v1.4.0
 // Top-bar taskbar: little icons for open windows, no overlay, no layout disturbance.
 // Window source + icon approach inspired by rosakodu/omarchy-dock (MIT):
 // ToplevelManager.toplevels, toplevel.activate()/close(), Quickshell.iconPath lookup.
@@ -7,9 +7,11 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
+import "SwitcherLogic.js" as Logic
 
 BarWidget {
     id: root
@@ -17,7 +19,11 @@ BarWidget {
 
     // shell.json per-widget override: { "id": "wartafak.windowswitcher", "showAllWorkspaces": false }
     readonly property bool showAll: setting("showAllWorkspaces", true) !== false
-    readonly property int iconPx: Math.max(14, Math.min(24, Math.round(barSize * 0.52)))
+    // Sizes derive from barSize so nothing clips: 2px margin between the
+    // bar edge and the highlight box, 2px padding between the box and
+    // the icon. The icon-to-box gap stays constant at any bar height.
+    readonly property int hiPx: Math.max(20, Math.min(28, barSize - 4))
+    readonly property int iconPx: Math.max(16, Math.min(root.hiPx - 4, Math.round(barSize * 0.68)))
 
     readonly property var allToplevels: ToplevelManager.toplevels ? ToplevelManager.toplevels.values : []
     readonly property var activeTop: ToplevelManager.activeToplevel
@@ -28,6 +34,12 @@ BarWidget {
     // kept tripping QML's loop detector via the registry writes).
     property var windows: []
     property bool _refreshing: false
+    // Authoritative workspace names keyed by live Toplevel object
+    // (hyprctl is authoritative — QML workspace fields can come through
+    // empty, which used to rank every icon last and leave creation
+    // order). Rebuilt on every resolve; pruned to live windows on sync
+    // so closed windows are never retained.
+    property var authWs: null
     // Icon lookup cache keyed by lowercase appId (see Switcher.qml):
     // iconPath() hits the theme per call; icons never change per app.
     property var iconCache: ({})
@@ -81,6 +93,19 @@ BarWidget {
         }
         if (!same) {
             root.knownWindows = next
+            // Prune the authoritative map to survivors (never retain
+            // closed windows); clientsProc re-resolves right after.
+            if (root.authWs) {
+                try {
+                    var pruned = new Map()
+                    for (var p = 0; p < next.length; p++) {
+                        var pv = root.authWs.get(next[p])
+                        if (pv) pruned.set(next[p], pv)
+                    }
+                    root.authWs = pruned
+                } catch (e) { root.authWs = null }
+            }
+            clientsProc.running = true
         }
         root.refresh()
     }
@@ -96,15 +121,27 @@ BarWidget {
     function refresh() {
         if (!root._ready || root._refreshing) return
         root._refreshing = true
-        var out = []
+        // Workspace-first order (ws 1, 2, ...), creation order within a
+        // workspace. Plain projections for the shared sorter (QObject
+        // fields are read here so the library never touches live QObjects).
+        // The hyprctl-resolved name wins per entry (see authWs); the QML
+        // id/name pair is the fallback until the first resolve lands.
+        var entries = []
         var src = root.knownWindows
         for (var i = 0; i < src.length; i++) {
             var t = src[i]
             if (!t || isSpecial(t) || !onFocusedWs(t)) continue
-            out.push(t)
+            var wid = undefined
+            try { wid = t.workspace ? t.workspace.id : undefined } catch (e) { wid = undefined }
+            var picked = Logic.pickBarWs(authWsName(t), wid, wsName(t))
+            entries.push({ t: t, wsId: picked.wsId, wsName: picked.wsName, pos: i })
         }
+        var sorted = Logic.orderBarEntries(entries)
+        var out = []
+        for (var k = 0; k < sorted.length; k++) out.push(sorted[k].t)
         // Only assign on real membership change: a fresh array every
         // focus switch used to churn the Repeater + layout each time.
+        // Order changes count: sameWindows is order-sensitive on purpose.
         if (!sameWindows(root.windows, out)) root.windows = out
         root._refreshing = false
     }
@@ -134,8 +171,18 @@ BarWidget {
     function wsName(t) {
         return (t && t.workspace) ? String(t.workspace.name || "") : ""
     }
+    // hyprctl-resolved workspace name for a window ("" when unresolved).
+    function authWsName(t) {
+        try {
+            if (root.authWs) {
+                var v = root.authWs.get(t)
+                if (v && String(v).length > 0) return String(v)
+            }
+        } catch (e) {}
+        return ""
+    }
     function tooltip(t) {
-        var ws = wsName(t)
+        var ws = authWsName(t) || wsName(t)
         return ws.length > 0 ? ("[" + ws + "] " + title(t)) : title(t)
     }
 
@@ -182,6 +229,57 @@ BarWidget {
         function onActiveToplevelChanged() { root.syncWindows() }
     }
 
+    // hyprctl is the only reliable source of workspace names (QML fields
+    // can come through empty); match clients to rows by class/title like
+    // the switcher does, then re-sort by the authoritative names.
+    Process {
+        id: clientsProc
+        command: ["hyprctl", "clients", "-j"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    var clients = JSON.parse(text)
+                    var plainClients = []
+                    for (var c = 0; c < clients.length; c++) {
+                        var cc = clients[c]
+                        var ccWs = "", ccWsLabel = ""
+                        try {
+                            ccWs = String((cc.workspace && cc.workspace.name) || "")
+                            ccWsLabel = String((cc.workspace && (cc.workspace.name || cc.workspace.id)) || "")
+                        } catch (e) { }
+                        plainClients.push({
+                            cls: String(cc["class"] || "").trim(),
+                            title: String(cc.title || ""),
+                            ws: ccWs,
+                            wsLabel: ccWsLabel,
+                            address: String(cc.address || "")
+                        })
+                    }
+                    var rows = root.windows
+                    var plainRows = []
+                    for (var i = 0; i < rows.length; i++) {
+                        var t = rows[i]
+                        var cls = "", ttl = ""
+                        try {
+                            cls = String((t && t.appId) || "").trim()
+                            ttl = String((t && t.title) || "")
+                        } catch (e) { }
+                        plainRows.push({ cls: cls, ttl: ttl, ws: root.wsName(t) })
+                    }
+                    var res = Logic.matchRowAddrs(plainRows, plainClients)
+                    var m = null
+                    try { m = new Map() } catch (e) { m = null }
+                    if (!m) return
+                    for (var k = 0; k < rows.length && k < res.wsNames.length; k++) {
+                        if (res.wsNames[k]) m.set(rows[k], res.wsNames[k])
+                    }
+                    root.authWs = m
+                    root.refresh()
+                } catch (e) { }
+            }
+        }
+    }
+
     visible: !vertical && root.windows.length > 0
     implicitWidth: visible ? taskRow.implicitWidth + Style.space(4) : 0
     implicitHeight: barSize
@@ -201,14 +299,14 @@ BarWidget {
                     property var win: modelData
                     property bool isActive: ToplevelManager.activeToplevel === win
 
-                    implicitWidth: 26
+                    implicitWidth: root.hiPx + 2
                     implicitHeight: root.barSize
 
                     Rectangle {
                         anchors.centerIn: parent
-                        width: 24
-                        height: 24
-                        radius: 6
+                        width: root.hiPx
+                        height: root.hiPx
+                        radius: 7
                         color: cell.isActive
                             ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.25)
                             : hover.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : "transparent"
@@ -225,19 +323,6 @@ BarWidget {
                             cache: true
                             source: root.iconFor(cell.win)
                             sourceSize: Qt.size(96, 96)
-                        }
-
-                        // running dot for non-active windows
-                        Rectangle {
-                            visible: !cell.isActive
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            anchors.bottom: parent.bottom
-                            anchors.bottomMargin: 1
-                            width: 3
-                            height: 3
-                            radius: 1.5
-                            color: Color.muted
-                            opacity: 0.8
                         }
                     }
 

@@ -5,7 +5,7 @@
   "version": "1.4.0",
   "author": "Wartafak",
   "license": "MIT",
-  "description": "Show and navigate currently open windows. Persistent top-bar icon strip plus Super+Tab switcher.",
+  "description": "Show and navigate open windows with a top-bar icon strip (one icon per window grouped by workspace, active highlight, left-click to focus, middle/right-click to close, workspace tooltip, auto-hides when empty, special workspaces excluded) plus a Super+Tab switcher (tap to toggle last two windows, hold Super+Tab/Shift+Tab or Up/Down to cycle in most-recently-used order, release Super to confirm, click to focus, Esc to dismiss).",
   "kinds": [
     "bar-widget",
     "overlay"
